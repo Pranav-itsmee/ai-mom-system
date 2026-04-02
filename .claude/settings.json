@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /d/ai-mom-system/frontend/app/meetings/[id]/ /d/ai-mom-system/frontend/app/mom/[id]/)",
+      "Bash(ls -la /d/ai-mom-system/frontend/app/mom/[id]/edit/)"
+    ]
+  }
+}

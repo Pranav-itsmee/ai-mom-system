@@ -138,7 +138,7 @@ async function callClaudeWithFileId(fileId) {
           role: 'user',
           content: [
             {
-              type: 'audio',
+              type: 'document',
               source: {
                 type:    'file',
                 file_id: fileId,
@@ -182,7 +182,7 @@ async function callClaudeWithInlineBase64(audioPath) {
           role: 'user',
           content: [
             {
-              type: 'audio',
+              type: 'document',
               source: {
                 type:       'base64',
                 media_type: 'audio/mpeg',
