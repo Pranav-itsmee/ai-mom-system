@@ -12,7 +12,7 @@ async function startServer() {
     logger.info('Database connection established.');
 
     // In production, replace sync({alter}) with proper Sequelize migrations
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     logger.info('Database schema synced.');
 
     const server = app.listen(PORT, () => {

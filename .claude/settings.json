@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(ls -la /d/ai-mom-system/frontend/app/meetings/[id]/ /d/ai-mom-system/frontend/app/mom/[id]/)",
-      "Bash(ls -la /d/ai-mom-system/frontend/app/mom/[id]/edit/)"
+      "Bash(ls -la /d/ai-mom-system/frontend/app/mom/[id]/edit/)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebSearch",
+      "Bash(curl -s http://localhost:5000/health)"
     ]
   }
 }

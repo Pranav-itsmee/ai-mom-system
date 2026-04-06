@@ -76,23 +76,31 @@ async function syncMeetings() {
 }
 
 /**
- * Return all scheduled meetings whose start time is within the next
- * `withinMinutes` minutes. These are candidates for the bot to join.
+ * Return meetings that should be joined right now — i.e. whose start time
+ * falls within the join window:  [now + targetMs - halfMs, now + targetMs + halfMs]
+ *
+ * Example with defaults (targetMs=120 000, halfMs=30 000):
+ *   Only meetings starting 90 – 150 seconds from now are returned.
+ *   Bot is triggered when the meeting is exactly ~2 minutes away.
+ *
+ * @param {number} targetMs  - How far ahead to target (ms). Default 2 min.
+ * @param {number} halfMs    - Half-width of the window (ms). Default 30 s.
  */
-async function getMeetingsStartingSoon(withinMinutes = 2) {
-  const now = new Date();
-  const cutoff = new Date(now.getTime() + withinMinutes * 60 * 1000);
+async function getMeetingsInJoinWindow(targetMs = 120_000, halfMs = 30_000) {
+  const now        = new Date();
+  const lowerBound = new Date(now.getTime() + targetMs - halfMs);
+  const upperBound = new Date(now.getTime() + targetMs + halfMs);
 
   return Meeting.findAll({
     where: {
-      status: 'scheduled',
+      status:    'scheduled',
       meet_link: { [Op.ne]: null },
       scheduled_at: {
-        [Op.gte]: now,
-        [Op.lte]: cutoff,
+        [Op.gte]: lowerBound,
+        [Op.lte]: upperBound,
       },
     },
   });
 }
 
-module.exports = { syncMeetings, getMeetingsStartingSoon, fetchUpcomingEvents };
+module.exports = { syncMeetings, getMeetingsInJoinWindow, fetchUpcomingEvents };

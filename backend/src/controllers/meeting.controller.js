@@ -128,4 +128,37 @@ async function deleteMeeting(req, res, next) {
   }
 }
 
-module.exports = { listMeetings, getMeeting, syncCalendar, updateMeetingStatus, deleteMeeting };
+/**
+ * POST /meetings/:id/admit
+ * Authorised users trigger this to admit participants waiting in the bot's lobby.
+ * The bot never auto-admits — this is the only code path that calls admitWaiting().
+ */
+async function admitWaiting(req, res, next) {
+  try {
+    const meetBot = require('../bot/meetBot');
+    const admitted = await meetBot.admitWaiting(parseInt(req.params.id, 10));
+    res.json({ admitted, count: admitted.length });
+  } catch (err) {
+    // 404-style error if no active session
+    if (err.message.includes('No active bot session')) {
+      return res.status(404).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+/**
+ * GET /meetings/:id/waiting
+ * Returns the current count of participants waiting in the lobby.
+ */
+async function getWaiting(req, res, next) {
+  try {
+    const meetBot = require('../bot/meetBot');
+    const count = meetBot.getWaitingCount(parseInt(req.params.id, 10));
+    res.json({ meeting_id: parseInt(req.params.id, 10), waiting: count });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listMeetings, getMeeting, syncCalendar, updateMeetingStatus, deleteMeeting, admitWaiting, getWaiting };
