@@ -5,7 +5,10 @@
       "Bash(ls -la /d/ai-mom-system/frontend/app/mom/[id]/edit/)",
       "WebFetch(domain:docs.anthropic.com)",
       "WebSearch",
-      "Bash(curl -s http://localhost:5000/health)"
+      "Bash(curl -s http://localhost:5000/health)",
+      "Bash(dir /b \"D:\\\\ai-mom-system\\\\frontend\\\\store\")",
+      "Bash(dir /b \"D:\\\\ai-mom-system\\\\frontend\\\\app\")",
+      "Bash(npm install:*)"
     ]
   }
 }

@@ -75,6 +75,12 @@ const meetingSlice = createSlice({
     clearCurrentMeeting(state) {
       state.currentMeeting = null;
     },
+    updateMeetingStatusLocal(state, action: { payload: { meetingId: number; status: Meeting['status'] } }) {
+      const idx = state.meetings.findIndex((m) => m.id === action.payload.meetingId);
+      if (idx !== -1) state.meetings[idx].status = action.payload.status;
+      if (state.currentMeeting?.id === action.payload.meetingId)
+        state.currentMeeting.status = action.payload.status;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -119,5 +125,5 @@ const meetingSlice = createSlice({
   },
 });
 
-export const { clearCurrentMeeting } = meetingSlice.actions;
+export const { clearCurrentMeeting, updateMeetingStatusLocal } = meetingSlice.actions;
 export default meetingSlice.reducer;

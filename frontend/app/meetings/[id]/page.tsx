@@ -3,40 +3,52 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useDispatch, useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
+import { Calendar, Clock, User, Users, Link2 } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import { fetchMeeting } from '@/store/slices/meetingSlice';
 import { api } from '@/services/api';
-import MOMViewer from '@/components/MOMViewer';
-import ProjectLinker from '@/components/ProjectLinker';
-
-const STATUS_COLOR: Record<string, string> = {
-  scheduled:  '#3b82f6',
-  recording:  '#f59e0b',
-  processing: '#8b5cf6',
-  completed:  '#10b981',
-  failed:     '#ef4444',
-};
+import MeetingStatusBadge from '@/components/meetings/MeetingStatusBadge';
+import AdmitButton        from '@/components/meetings/AdmitButton';
+import MOMViewer          from '@/components/mom/MOMViewer';
+import ProjectLinker      from '@/components/ProjectLinker';
+import ProtectedLayout    from '@/components/layout/ProtectedLayout';
+import ExportButton       from '@/components/ui/ExportButton';
 
 export default function MeetingDetailPage({ params }: { params: { id: string } }) {
-  const dispatch  = useDispatch<AppDispatch>();
+  const { t, i18n } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const { currentMeeting, status, error } = useSelector((s: RootState) => s.meetings);
+  const [showLinker,   setShowLinker]   = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMsg,     setRegenMsg]     = useState('');
+  const [waitingCount, setWaitingCount] = useState(0);
 
-  const [showLinker,    setShowLinker]    = useState(false);
-  const [regenerating,  setRegenerating]  = useState(false);
-  const [regenMsg,      setRegenMsg]      = useState('');
+  const locale = i18n.language === 'ja' ? 'ja-JP' : 'en-US';
 
   useEffect(() => {
     dispatch(fetchMeeting(params.id));
   }, [dispatch, params.id]);
 
-  // Poll every 10 s while the meeting is still recording/processing
+  // Poll while recording / processing
   useEffect(() => {
     if (!currentMeeting) return;
     if (!['recording', 'processing'].includes(currentMeeting.status)) return;
-
     const id = setInterval(() => dispatch(fetchMeeting(params.id)), 10_000);
     return () => clearInterval(id);
   }, [dispatch, params.id, currentMeeting?.status]);
+
+  // Poll waiting count while recording
+  useEffect(() => {
+    if (currentMeeting?.status !== 'recording') return;
+    const id = setInterval(async () => {
+      try {
+        const res = await api.get(`/meetings/${params.id}/waiting`);
+        setWaitingCount(res.data.count ?? 0);
+      } catch { /* ignore */ }
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [params.id, currentMeeting?.status]);
 
   async function handleRegenerate() {
     if (!currentMeeting?.mom) return;
@@ -45,135 +57,150 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
     try {
       const res = await api.post(`/mom/${currentMeeting.mom.id}/regenerate`);
       setRegenMsg(res.data.message ?? 'Regeneration started');
-    } catch (err: unknown) {
-      setRegenMsg(err instanceof Error ? err.message : 'Regeneration failed');
+    } catch (err: any) {
+      setRegenMsg(err.response?.data?.error || 'Regeneration failed');
     } finally {
       setRegenerating(false);
     }
   }
 
-  if (status === 'loading') return <div style={{ padding: 40, color: '#5e6c84' }}>Loading…</div>;
-  if (error)               return <div style={{ padding: 40, color: '#e53e3e' }}>Error: {error}</div>;
-  if (!currentMeeting)     return <div style={{ padding: 40, color: '#5e6c84' }}>Meeting not found.</div>;
+  if (status === 'loading') return (
+    <ProtectedLayout>
+      <p className="text-[var(--text-muted)] text-sm">{t('common.loading')}</p>
+    </ProtectedLayout>
+  );
+  if (error) return (
+    <ProtectedLayout>
+      <p className="text-accent text-sm">{t('common.error')}: {error}</p>
+    </ProtectedLayout>
+  );
+  if (!currentMeeting) return (
+    <ProtectedLayout>
+      <p className="text-[var(--text-muted)] text-sm">{t('common.no_data')}</p>
+    </ProtectedLayout>
+  );
 
-  const mom   = currentMeeting.mom;
-  const color = STATUS_COLOR[currentMeeting.status] ?? '#5e6c84';
+  const mom = currentMeeting.mom;
 
   return (
-    <main style={{ maxWidth: 960, margin: '40px auto', padding: '0 24px' }}>
-      {/* Breadcrumb */}
-      <p style={{ fontSize: 13, color: '#5e6c84' }}>
-        <Link href="/" style={{ color: '#3b82f6' }}>Dashboard</Link>
-        {' / '}
-        <Link href="/meetings" style={{ color: '#3b82f6' }}>Meetings</Link>
-        {' / '}
-        {currentMeeting.title}
-      </p>
-
-      {/* Header */}
-      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#172b4d' }}>{currentMeeting.title}</h1>
-          <p style={{ fontSize: 13, color: '#5e6c84', marginTop: 4 }}>
-            {new Date(currentMeeting.scheduled_at).toLocaleString()}
-            {currentMeeting.duration_seconds != null && ` · ${Math.round(currentMeeting.duration_seconds / 60)} min`}
-            {currentMeeting.organizer && ` · ${currentMeeting.organizer.name}`}
-          </p>
+    <ProtectedLayout>
+      <div className="max-w-4xl mx-auto">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] mb-4">
+          <Link href="/meetings" className="hover:text-primary">{t('nav.meetings')}</Link>
+          <span>/</span>
+          <span className="text-[var(--text)] truncate">{currentMeeting.title}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: 12,
-              fontSize: 11,
-              fontWeight: 700,
-              background: color + '18',
-              color,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}
-          >
-            {currentMeeting.status}
-          </span>
-          <button onClick={() => setShowLinker(true)} style={btnSecondary}>
-            Link to Project
-          </button>
+
+        {/* Header card */}
+        <div className="card mb-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-xl font-bold text-[var(--text)]">{currentMeeting.title}</h1>
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                <MeetingStatusBadge status={currentMeeting.status} />
+                <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                  <Calendar size={12} />
+                  {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' })
+                    .format(new Date(currentMeeting.scheduled_at))}
+                </span>
+                {currentMeeting.duration_seconds != null && (
+                  <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                    <Clock size={12} />
+                    {Math.round(currentMeeting.duration_seconds / 60)} {t('common.min')}
+                  </span>
+                )}
+                {currentMeeting.organizer && (
+                  <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                    <User size={12} /> {currentMeeting.organizer.name}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button onClick={() => setShowLinker(true)} className="btn-secondary flex items-center gap-1.5 text-xs">
+              <Link2 size={13} /> {t('btn.link_project')}
+            </button>
+          </div>
+
+          {/* Attendees */}
+          {currentMeeting.attendees && currentMeeting.attendees.length > 0 && (
+            <div className="flex items-center gap-2 mt-3">
+              <Users size={13} className="text-[var(--text-muted)]" />
+              <div className="flex gap-1 flex-wrap">
+                {currentMeeting.attendees.map((a: any, i: number) => (
+                  <span key={i} className="text-xs bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 rounded-full">
+                    {a.name ?? a.email}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* Attendees */}
-      {currentMeeting.attendees && currentMeeting.attendees.length > 0 && (
-        <p style={{ marginTop: 10, fontSize: 13, color: '#5e6c84' }}>
-          <strong>Attendees:</strong>{' '}
-          {currentMeeting.attendees.map((a: { name?: string; email?: string }) => a.name ?? a.email).join(', ')}
-        </p>
-      )}
+        {/* Status banners */}
+        {currentMeeting.status === 'recording' && (
+          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+            <p className="text-sm text-red-600 dark:text-red-400 font-medium recording-pulse">
+              {t('meeting.recording_banner')}
+              {waitingCount > 0 && ` · ${waitingCount} ${t('meeting.waiting')}`}
+            </p>
+            <AdmitButton meetingId={currentMeeting.id} waitingCount={waitingCount} />
+          </div>
+        )}
+        {currentMeeting.status === 'processing' && (
+          <div className="mb-4 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+              ⏳ {t('meeting.processing_banner')}
+            </p>
+          </div>
+        )}
+        {currentMeeting.status === 'failed' && (
+          <div className="mb-4 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+            <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+              {t('status.failed')}: {t('common.error')}
+            </p>
+            {mom && (
+              <button onClick={handleRegenerate} disabled={regenerating} className="btn-danger text-xs py-1.5">
+                {regenerating ? t('common.loading') : t('btn.regenerate')}
+              </button>
+            )}
+          </div>
+        )}
+        {regenMsg && (
+          <div className="mb-4 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+            <p className="text-sm text-blue-600 dark:text-blue-400">{regenMsg}</p>
+          </div>
+        )}
 
-      {/* Status notes for in-progress states */}
-      {currentMeeting.status === 'recording' && (
-        <div style={infoBox('#f59e0b')}>Recording in progress — bot is active in the meeting.</div>
-      )}
-      {currentMeeting.status === 'processing' && (
-        <div style={infoBox('#8b5cf6')}>Processing audio — Claude is generating the MOM. This may take a minute.</div>
-      )}
-      {currentMeeting.status === 'failed' && (
-        <div style={infoBox('#ef4444')}>Processing failed. Check server logs for details.</div>
-      )}
-
-      {/* Regen message */}
-      {regenMsg && (
-        <div style={{ ...infoBox('#3b82f6'), marginTop: 12 }}>{regenMsg}</div>
-      )}
-
-      {/* MOM */}
-      <div style={{ marginTop: 28 }}>
+        {/* MOM section */}
         {mom ? (
-          <MOMViewer
-            mom={mom}
-            editHref={`/mom/${mom.id}/edit`}
-            onRegenerate={handleRegenerate}
-            regenerating={regenerating}
-          />
+          <>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h2 className="font-semibold text-[var(--text)]">{t('nav.moms')}</h2>
+              <div className="flex gap-2 flex-wrap">
+                <Link href={`/mom/${mom.id}`} className="btn-secondary text-xs py-1.5">
+                  {t('btn.view_mom')}
+                </Link>
+                <Link href={`/mom/${mom.id}/edit`} className="btn-primary text-xs py-1.5">
+                  {t('btn.edit_mom')}
+                </Link>
+                <ExportButton mom={mom} meetingTitle={currentMeeting.title} />
+              </div>
+            </div>
+            <MOMViewer mom={mom} compact />
+          </>
         ) : (
-          <div style={{ padding: '20px 18px', background: '#fff', borderRadius: 8, border: '1px solid #dfe1e6', color: '#5e6c84' }}>
+          <div className="card text-sm text-[var(--text-muted)]">
             {['scheduled', 'recording', 'processing'].includes(currentMeeting.status)
-              ? 'MOM will be generated automatically after the meeting ends.'
-              : 'No MOM generated for this meeting.'}
+              ? t('meeting.processing_banner')
+              : t('mom.not_available')}
           </div>
         )}
       </div>
 
-      {/* BMS Project Linker modal */}
       {showLinker && (
-        <ProjectLinker
-          meetingId={currentMeeting.id}
-          onClose={() => setShowLinker(false)}
-        />
+        <ProjectLinker meetingId={currentMeeting.id} onClose={() => setShowLinker(false)} />
       )}
-    </main>
+    </ProtectedLayout>
   );
 }
-
-function infoBox(color: string): React.CSSProperties {
-  return {
-    marginTop: 14,
-    padding: '10px 14px',
-    background: color + '12',
-    border: `1px solid ${color}44`,
-    borderRadius: 6,
-    fontSize: 13,
-    color,
-    fontWeight: 500,
-  };
-}
-
-const btnSecondary: React.CSSProperties = {
-  padding: '7px 14px',
-  background: '#fff',
-  color: '#344563',
-  border: '1px solid #dfe1e6',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-};

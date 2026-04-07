@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
+import { X, Link2, Trash2 } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import {
   fetchBmsProjects,
@@ -16,12 +18,13 @@ interface Props {
 }
 
 export default function ProjectLinker({ meetingId, onClose }: Props) {
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const { projects, links, projectsStatus } = useSelector((s: RootState) => s.bms);
 
   const [selectedProjectId, setSelectedProjectId] = useState<number | ''>('');
-  const [linking, setLinking] = useState(false);
-  const [error, setError] = useState('');
+  const [linking, setLinking]                     = useState(false);
+  const [error, setError]                         = useState('');
 
   useEffect(() => {
     dispatch(fetchBmsProjects());
@@ -29,14 +32,19 @@ export default function ProjectLinker({ meetingId, onClose }: Props) {
   }, [dispatch, meetingId]);
 
   async function handleLink() {
-    if (!selectedProjectId) { setError('Select a project first'); return; }
+    if (!selectedProjectId) {
+      setError(t('bms.select_project', { defaultValue: 'Select a project first.' }));
+      return;
+    }
     setError('');
     setLinking(true);
     try {
-      await dispatch(linkProject({ meeting_id: meetingId, project_id: Number(selectedProjectId) })).unwrap();
+      await dispatch(
+        linkProject({ meeting_id: meetingId, project_id: Number(selectedProjectId) })
+      ).unwrap();
       setSelectedProjectId('');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to link project');
+      setError(err instanceof Error ? err.message : t('bms.link_failed', { defaultValue: 'Failed to link project.' }));
     } finally {
       setLinking(false);
     }
@@ -46,166 +54,122 @@ export default function ProjectLinker({ meetingId, onClose }: Props) {
     await dispatch(removeProjectLink(linkId));
   }
 
-  // Build a map of project id → name for quick lookup in the links list
   const projectMap = new Map(projects.map((p) => [p.id, p.name]));
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.45)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: 10,
-          padding: '28px 28px 24px',
-          width: '100%',
-          maxWidth: 480,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#172b4d' }}>Link to BMS Project</h2>
-          <button onClick={onClose} style={closeBtn}>×</button>
+      <div className="bg-[var(--surface)] rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-5">
+
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-[var(--text)] flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-[var(--primary)]" />
+            {t('bms.modal_title', { defaultValue: 'Link to BMS Project' })}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Add link */}
-        <div>
-          <label style={labelStyle}>Select Project</label>
-          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <div className="space-y-2">
+          <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            {t('bms.select_label', { defaultValue: 'Select Project' })}
+          </label>
+          <div className="flex gap-2">
             <select
+              className="input flex-1"
               value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value === '' ? '' : Number(e.target.value))}
-              style={{ ...inputStyle, flex: 1 }}
+              onChange={(e) =>
+                setSelectedProjectId(e.target.value === '' ? '' : Number(e.target.value))
+              }
               disabled={projectsStatus === 'loading'}
             >
               <option value="">
                 {projectsStatus === 'loading'
-                  ? 'Loading projects…'
+                  ? t('common.loading', { defaultValue: 'Loading…' })
                   : projects.length === 0
-                  ? 'No projects available'
-                  : 'Choose a project…'}
+                  ? t('bms.no_projects', { defaultValue: 'No projects available' })
+                  : t('bms.choose', { defaultValue: 'Choose a project…' })}
               </option>
               {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
               ))}
             </select>
             <button
+              className="btn-primary whitespace-nowrap"
               onClick={handleLink}
               disabled={linking || !selectedProjectId}
-              style={btnPrimary}
             >
-              {linking ? '…' : 'Link'}
+              {linking ? '…' : t('bms.link_btn', { defaultValue: 'Link' })}
             </button>
           </div>
-          {error && <p style={{ marginTop: 8, color: '#e53e3e', fontSize: 13 }}>{error}</p>}
+
+          {error && (
+            <p className="text-sm text-[var(--accent)]">{error}</p>
+          )}
 
           {projects.length === 0 && projectsStatus === 'succeeded' && (
-            <p style={{ marginTop: 8, fontSize: 12, color: '#5e6c84' }}>
-              No BMS projects found. Ensure BMS_API_URL is configured in the backend .env.
+            <p className="text-xs text-[var(--text-muted)]">
+              {t('bms.no_projects_hint', {
+                defaultValue: 'No BMS projects found. Ensure BMS_API_URL is configured in the backend .env.',
+              })}
             </p>
           )}
         </div>
 
         {/* Existing links */}
         {links.length > 0 && (
-          <div style={{ marginTop: 24 }}>
-            <p style={labelStyle}>Linked Projects</p>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              {t('bms.linked_projects', { defaultValue: 'Linked Projects' })}
+            </p>
+            <div className="space-y-1.5">
               {links.map((link) => (
                 <div
                   key={link.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    background: '#f4f5f7',
-                    borderRadius: 6,
-                  }}
+                  className="flex items-center justify-between bg-[var(--bg)] rounded-xl px-3 py-2.5 gap-3"
                 >
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: '#172b4d' }}>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[var(--text)] truncate">
                       {projectMap.get(link.project_id) ?? `Project #${link.project_id}`}
                     </p>
-                    <p style={{ fontSize: 11, color: '#5e6c84', marginTop: 1 }}>
-                      Linked {new Date(link.linked_at).toLocaleDateString()}
-                      {link.linkedByUser ? ` by ${link.linkedByUser.name}` : ''}
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                      {t('bms.linked_on', { defaultValue: 'Linked' })}{' '}
+                      {new Date(link.linked_at).toLocaleDateString()}
+                      {link.linkedByUser ? ` ${t('bms.linked_by', { defaultValue: 'by' })} ${link.linkedByUser.name}` : ''}
                     </p>
                   </div>
                   <button
+                    className="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0 p-1 rounded"
                     onClick={() => handleRemove(link.id)}
-                    style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}
-                    title="Remove link"
-                  >×</button>
+                    title={t('bms.remove_link', { defaultValue: 'Remove link' })}
+                    aria-label="Remove link"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        <div style={{ marginTop: 24 }}>
-          <button onClick={onClose} style={btnSecondary}>Close</button>
+        {/* Footer */}
+        <div className="flex justify-end">
+          <button className="btn-secondary" onClick={onClose}>
+            {t('common.close', { defaultValue: 'Close' })}
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: '#5e6c84',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '8px 11px',
-  border: '1px solid #dfe1e6',
-  borderRadius: 6,
-  fontSize: 14,
-  outline: 'none',
-  color: '#172b4d',
-  background: '#fff',
-};
-
-const btnPrimary: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#3b82f6',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
-const btnSecondary: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#fff',
-  color: '#344563',
-  border: '1px solid #dfe1e6',
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const closeBtn: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  fontSize: 22,
-  color: '#5e6c84',
-  cursor: 'pointer',
-  lineHeight: 1,
-  padding: '0 4px',
-};
