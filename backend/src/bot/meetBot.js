@@ -170,7 +170,7 @@ class MeetBot {
 
   async _launchBrowser() {
     return puppeteer.launch({
-      headless: 'false',   // set to 'new' to run invisibly in the background
+      headless: 'new',   // set to 'new' to run invisibly in the background
       executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       userDataDir: BOT_PROFILE_DIR,
       args: [
