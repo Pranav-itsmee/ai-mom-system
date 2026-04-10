@@ -37,9 +37,9 @@ Return ONLY a valid JSON object (no preamble, no markdown):
   "decisions": ["<decision 1>", "<decision 2>"],
   "action_items": [
     {
-      "title": "<task title>",
-      "description": "<what needs to be done>",
-      "assigned_to": "<name or 'Unassigned'>",
+      "title": "<short task title, e.g. 'Design UI mockups'>",
+      "description": "<what exactly needs to be done>",
+      "assigned_to": "<person's name, or 'Unassigned'>",
       "deadline": "<YYYY-MM-DD if mentioned, else null>",
       "priority": "<high | medium | low>"
     }
@@ -48,10 +48,13 @@ Return ONLY a valid JSON object (no preamble, no markdown):
 }
 
 Rules:
-- Extract every action item discussed.
-- Convert verbal deadlines ("by Friday", "end of month") to YYYY-MM-DD.
+- action_items is CRITICAL — extract EVERY task, assignment, or follow-up.
+- Include ANY sentence where someone says they WILL DO, WILL HANDLE, WILL WORK ON, IS RESPONSIBLE FOR, or IS ASSIGNED something.
+- Informal assignments like "Pranav will handle the design" or "Arul will work on the UI" MUST be extracted as action items.
+- Each person mentioned with a responsibility gets their own action_item entry.
+- Convert verbal deadlines ("by Friday", "end of month") to YYYY-MM-DD. Use current year if not specified.
 - Do not invent information not present in the transcript.
-- Return JSON only.
+- Return JSON only — no markdown, no explanation.
 `.trim();
 
 const PROMPT_JAPANESE = `
@@ -240,17 +243,21 @@ function normalizeForDB(parsed, language) {
       ...(en.decisions             || []).map((p) => `[EN Decision] ${p}`),
     ];
 
+    const tasks = (en.action_items || jp.action_items || []).map(normalizeTask);
+    logger.info(`normalizeForDB [japanese] — ${tasks.length} action item(s) extracted`);
     return {
       transcript: parsed.transcript || '',
       summary:    `${jp.summary || ''}\n\n---\n[English Translation]\n${en.summary || ''}`,
       key_points: [...jpPoints, ...enPoints],
       // Use English action items so deadline/priority fields stay in English
-      tasks:      (en.action_items || jp.action_items || []).map(normalizeTask),
+      tasks,
       attendees:  en.participants || jp.participants || [],
     };
   }
 
   // English
+  const tasks = (parsed.action_items || []).map(normalizeTask);
+  logger.info(`normalizeForDB [english] — ${tasks.length} action item(s) extracted`);
   return {
     transcript: parsed.transcript || '',
     summary:    parsed.summary || '',
@@ -259,18 +266,18 @@ function normalizeForDB(parsed, language) {
       ...(parsed.key_discussion_points || []).map((p) => `[Discussion] ${p}`),
       ...(parsed.decisions             || []).map((p) => `[Decision] ${p}`),
     ],
-    tasks:     (parsed.action_items || []).map(normalizeTask),
+    tasks,
     attendees: parsed.participants || [],
   };
 }
 
 function normalizeTask(t) {
   return {
-    title:       t.title,
-    description: t.description,
-    assigned_to: t.assigned_to,
-    deadline:    t.deadline,
-    priority:    t.priority,
+    title:       String(t.title || '').trim(),
+    description: t.description ? String(t.description).trim() : null,
+    assigned_to: t.assigned_to ? String(t.assigned_to).trim() : 'Unassigned',
+    deadline:    t.deadline    ? String(t.deadline).trim()    : null,
+    priority:    ['high', 'medium', 'low'].includes(t.priority) ? t.priority : 'medium',
   };
 }
 

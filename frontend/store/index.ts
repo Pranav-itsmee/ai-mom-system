@@ -4,8 +4,6 @@ import uiReducer      from './slices/uiSlice';
 import meetingReducer from './slices/meetingSlice';
 import momReducer     from './slices/momSlice';
 import taskReducer    from './slices/taskSlice';
-import bmsReducer     from './slices/bmsSlice';
-
 export const store = configureStore({
   reducer: {
     auth:     authReducer,
@@ -13,7 +11,6 @@ export const store = configureStore({
     meetings: meetingReducer,
     mom:      momReducer,
     tasks:    taskReducer,
-    bms:      bmsReducer,
   },
 });
 

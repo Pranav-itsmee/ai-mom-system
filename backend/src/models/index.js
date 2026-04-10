@@ -4,7 +4,6 @@ const MOM = require('./MOM');
 const MOMKeyPoint = require('./MOMKeyPoint');
 const Task = require('./Task');
 const MeetingAttendee = require('./MeetingAttendee');
-const MeetingProjectLink = require('./MeetingProjectLink');
 
 // ── User ↔ Meeting (organizer) ─────────────────────────────────────────────
 User.hasMany(Meeting, { foreignKey: 'organizer_id', as: 'organizedMeetings' });
@@ -36,12 +35,6 @@ MeetingAttendee.belongsTo(Meeting, { foreignKey: 'meeting_id' });
 User.hasMany(MeetingAttendee, { foreignKey: 'user_id', as: 'attendances' });
 MeetingAttendee.belongsTo(User, { foreignKey: 'user_id' });
 
-// ── Meeting ↔ MeetingProjectLink ───────────────────────────────────────────
-Meeting.hasMany(MeetingProjectLink, { foreignKey: 'meeting_id', as: 'projectLinks' });
-MeetingProjectLink.belongsTo(Meeting, { foreignKey: 'meeting_id' });
-User.hasMany(MeetingProjectLink, { foreignKey: 'linked_by', as: 'projectLinks' });
-MeetingProjectLink.belongsTo(User, { foreignKey: 'linked_by', as: 'linkedByUser' });
-
 module.exports = {
   User,
   Meeting,
@@ -49,5 +42,4 @@ module.exports = {
   MOMKeyPoint,
   Task,
   MeetingAttendee,
-  MeetingProjectLink,
 };

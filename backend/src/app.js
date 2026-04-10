@@ -5,7 +5,6 @@ const authRoutes = require('./routes/auth.routes');
 const meetingRoutes = require('./routes/meeting.routes');
 const momRoutes = require('./routes/mom.routes');
 const taskRoutes = require('./routes/task.routes');
-const bmsRoutes = require('./routes/bms.routes');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -27,7 +26,6 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/meetings', meetingRoutes);
 app.use('/api/v1/mom', momRoutes);
 app.use('/api/v1/tasks', taskRoutes);
-app.use('/api/v1/bms', bmsRoutes);
 
 // 404 handler
 app.use((req, res) => {

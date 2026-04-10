@@ -104,9 +104,10 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
 interface Props {
   mom: MOM;
   compact?: boolean;
+  showTasks?: boolean;
 }
 
-export default function MOMViewer({ mom, compact = false }: Props) {
+export default function MOMViewer({ mom, compact = false, showTasks = true }: Props) {
   const { t } = useTranslation();
   const [transcriptOpen, setTranscriptOpen] = useState(false);
 
@@ -157,8 +158,8 @@ export default function MOMViewer({ mom, compact = false }: Props) {
         </div>
       )}
 
-      {/* Tasks — full mode only */}
-      {!compact && tasks.length > 0 && (
+      {/* Tasks — full mode only, unless showTasks=false */}
+      {!compact && showTasks && tasks.length > 0 && (
         <div className="card">
           <SectionLabel>
             {t('mom.tasks')}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { RootState } from '@/store';
@@ -11,12 +11,17 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const router    = useRouter();
   const token     = useSelector((s: RootState) => s.auth.token);
   const collapsed = useSelector((s: RootState) => s.ui.sidebarCollapsed);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    if (!token) router.replace('/login');
-  }, [token, router]);
+    if (mounted && !token) router.replace('/login');
+  }, [mounted, token, router]);
 
-  if (!token) return null;
+  // Both server and client initial render return null — prevents hydration mismatch.
+  // After mount, if token exists the layout renders; otherwise redirect fires.
+  if (!mounted || !token) return null;
 
   return (
     <div className="flex min-h-screen bg-[var(--bg)]">
@@ -31,7 +36,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         style={{ paddingLeft: collapsed ? '70px' : '230px' }}
       >
         <Topbar />
-        <main className="flex-1 pt-16 p-5 lg:p-6 overflow-y-auto">
+        <main className="flex-1 pt-16 px-5 pb-5 lg:px-6 lg:pb-6 overflow-y-auto">
           {children}
         </main>
       </div>

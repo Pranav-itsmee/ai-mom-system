@@ -3,7 +3,6 @@
   "nav.moms":        "議事録",
   "nav.tasks":       "タスク",
   "nav.calendar":    "カレンダー",
-  "nav.bms":         "BMSプロジェクト",
   "nav.settings":    "設定",
 
   "status.scheduled":  "予定済み",
@@ -27,7 +26,6 @@
   "btn.add_point":     "ポイントを追加",
   "btn.clear_filters": "フィルターをクリア",
   "btn.view_mom":      "議事録を表示",
-  "btn.link_project":  "プロジェクトにリンク",
 
   "mom.not_available":   "議事録はまだ利用できません",
   "mom.summary":         "要約",

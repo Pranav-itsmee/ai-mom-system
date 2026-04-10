@@ -3,7 +3,6 @@
   "nav.moms":        "MOMs",
   "nav.tasks":       "Tasks",
   "nav.calendar":    "Calendar",
-  "nav.bms":         "BMS Projects",
   "nav.settings":    "Settings",
 
   "status.scheduled":  "Scheduled",
@@ -27,7 +26,6 @@
   "btn.add_point":     "Add Key Point",
   "btn.clear_filters": "Clear Filters",
   "btn.view_mom":      "View Full MOM",
-  "btn.link_project":  "Link to Project",
 
   "mom.not_available":   "MOM not yet available",
   "mom.summary":         "Summary",

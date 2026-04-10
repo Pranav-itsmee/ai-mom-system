@@ -4,14 +4,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { Calendar, Clock, User, Users, Link2 } from 'lucide-react';
+import { Calendar, Clock, User, Users } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import { fetchMeeting } from '@/store/slices/meetingSlice';
 import { api } from '@/services/api';
 import MeetingStatusBadge from '@/components/meetings/MeetingStatusBadge';
 import AdmitButton        from '@/components/meetings/AdmitButton';
 import MOMViewer          from '@/components/mom/MOMViewer';
-import ProjectLinker      from '@/components/ProjectLinker';
 import ProtectedLayout    from '@/components/layout/ProtectedLayout';
 import ExportButton       from '@/components/ui/ExportButton';
 
@@ -19,7 +18,6 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   const { t, i18n } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const { currentMeeting, status, error } = useSelector((s: RootState) => s.meetings);
-  const [showLinker,   setShowLinker]   = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenMsg,     setRegenMsg]     = useState('');
   const [waitingCount, setWaitingCount] = useState(0);
@@ -84,7 +82,7 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
 
   return (
     <ProtectedLayout>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         {/* Breadcrumb */}
         <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] mb-4">
           <Link href="/meetings" className="hover:text-primary">{t('nav.meetings')}</Link>
@@ -95,8 +93,8 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
         {/* Header card */}
         <div className="card mb-4">
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-xl font-bold text-[var(--text)]">{currentMeeting.title}</h1>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[18px] font-bold text-[var(--text)] truncate">{currentMeeting.title}</h1>
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 <MeetingStatusBadge status={currentMeeting.status} />
                 <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
@@ -117,9 +115,6 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
                 )}
               </div>
             </div>
-            <button onClick={() => setShowLinker(true)} className="btn-secondary flex items-center gap-1.5 text-xs">
-              <Link2 size={13} /> {t('btn.link_project')}
-            </button>
           </div>
 
           {/* Attendees */}
@@ -197,10 +192,6 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
           </div>
         )}
       </div>
-
-      {showLinker && (
-        <ProjectLinker meetingId={currentMeeting.id} onClose={() => setShowLinker(false)} />
-      )}
     </ProtectedLayout>
   );
 }

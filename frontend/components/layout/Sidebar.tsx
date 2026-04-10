@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import {
-  Calendar, FileText, CheckSquare, CalendarDays, Link2, Settings,
+  Calendar, FileText, CheckSquare, CalendarDays, Settings,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -14,7 +14,6 @@ const NAV = [
   { key: 'nav.moms',     icon: FileText,     href: '/mom/search' },
   { key: 'nav.tasks',    icon: CheckSquare,  href: '/tasks' },
   { key: 'nav.calendar', icon: CalendarDays, href: '/calendar' },
-  { key: 'nav.bms',      icon: Link2,        href: '/bms' },
   { key: 'nav.settings', icon: Settings,     href: '/settings' },
 ];
 

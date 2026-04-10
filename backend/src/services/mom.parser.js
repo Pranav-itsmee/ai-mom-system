@@ -1,22 +1,18 @@
 const logger = require('../utils/logger');
 
 /**
- * Parse Claude's raw text response into a structured MOM object.
+ * Parse Claude's raw text response into the raw JSON object Claude produced.
  *
  * Claude is instructed to return pure JSON, but may occasionally wrap it in
- * a markdown code fence.  This parser strips fences, trims whitespace, and
- * validates the required fields before returning.
+ * a markdown code fence.  This parser strips fences, parses the JSON, and
+ * does a minimal structural check before returning the raw object.
+ *
+ * The caller (normalizeForDB in claude.service.js) is responsible for
+ * extracting language-specific fields from the returned object.
  *
  * @param {string} rawText - The text content from Claude's response message
- * @returns {{
- *   transcript: string,
- *   summary: string,
- *   key_points: string[],
- *   tasks: Array<{title,description,assigned_to,deadline,priority}>,
- *   attendees: string[],
- *   meeting_date: string|null
- * }}
- * @throws {Error} If the response cannot be parsed into a valid MOM structure
+ * @returns {object} The raw parsed Claude JSON object
+ * @throws {Error} If the response cannot be parsed or is structurally invalid
  */
 function parseMOMResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') {
@@ -47,78 +43,33 @@ function parseMOMResponse(rawText) {
     }
   }
 
-  // ── Step 4: validate required fields ────────────────────────────────────
-  if (typeof parsed.summary !== 'string' || !parsed.summary.trim()) {
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Claude response is not a JSON object');
+  }
+
+  // ── Step 4: minimal structural check ────────────────────────────────────
+  // English: must have top-level summary
+  // Japanese: must have japanese.summary or english.summary
+  const isJapanese = parsed.language === 'japanese';
+  const hasSummary = isJapanese
+    ? (parsed.japanese?.summary || parsed.english?.summary)
+    : parsed.summary;
+
+  if (!hasSummary) {
     throw new Error('Claude response missing required field: summary');
   }
 
-  // ── Step 5: normalise optional fields with safe defaults ────────────────
-  const normalized = {
-    transcript:   typeof parsed.transcript  === 'string' ? parsed.transcript.trim()  : '',
-    summary:      parsed.summary.trim(),
-    key_points:   normaliseStringArray(parsed.key_points,  'key_points'),
-    tasks:        normaliseTasks(parsed.tasks),
-    attendees:    normaliseStringArray(parsed.attendees,    'attendees'),
-    meeting_date: normaliseDate(parsed.meeting_date),
-  };
+  const actionCount = isJapanese
+    ? ((parsed.english?.action_items || parsed.japanese?.action_items) || []).length
+    : (parsed.action_items || []).length;
 
   logger.info(
-    `MOM parsed — ${normalized.key_points.length} key points, ` +
-    `${normalized.tasks.length} tasks, ${normalized.attendees.length} attendees`
+    `MOM parsed — language: ${parsed.language ?? 'english'}, ` +
+    `action_items: ${actionCount}`
   );
 
-  return normalized;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function normaliseStringArray(value, fieldName) {
-  if (!value) return [];
-  if (!Array.isArray(value)) {
-    logger.warn(`Expected array for "${fieldName}", got ${typeof value} — treating as empty`);
-    return [];
-  }
-  return value
-    .filter((item) => typeof item === 'string' && item.trim().length > 0)
-    .map((item) => item.trim());
-}
-
-function normaliseTasks(raw) {
-  if (!raw || !Array.isArray(raw)) return [];
-
-  return raw
-    .filter((t) => t && typeof t.title === 'string' && t.title.trim())
-    .map((t) => ({
-      title:       t.title.trim(),
-      description: typeof t.description === 'string' ? t.description.trim() : null,
-      assigned_to: typeof t.assigned_to === 'string' && t.assigned_to.trim()
-        ? t.assigned_to.trim()
-        : 'Unassigned',
-      deadline:    normaliseDate(t.deadline),
-      priority:    normalisePriority(t.priority),
-    }));
-}
-
-function normaliseDate(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'null') return null;
-  // Validate YYYY-MM-DD format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // Try to parse freeform date and convert
-  const d = new Date(trimmed);
-  if (!isNaN(d.getTime())) {
-    return d.toISOString().split('T')[0];
-  }
-  return null;
-}
-
-function normalisePriority(raw) {
-  const valid = ['high', 'medium', 'low'];
-  if (typeof raw === 'string' && valid.includes(raw.toLowerCase())) {
-    return raw.toLowerCase();
-  }
-  return 'medium';
+  // Return the raw object — normalizeForDB extracts all fields
+  return parsed;
 }
 
 module.exports = { parseMOMResponse };
