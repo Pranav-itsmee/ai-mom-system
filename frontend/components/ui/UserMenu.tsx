@@ -4,9 +4,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import { Settings, LogOut, ChevronDown } from 'lucide-react';
+import { UserCircle, Settings, LogOut, ChevronDown } from 'lucide-react';
 import { logout } from '@/store/slices/authSlice';
 import { RootState } from '@/store';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:5000';
 
 export default function UserMenu() {
   const { t }    = useTranslation();
@@ -17,11 +19,11 @@ export default function UserMenu() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
+    function close(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
   }, []);
 
   function initials(name: string) {
@@ -33,57 +35,89 @@ export default function UserMenu() {
     router.push('/login');
   }
 
+  const avatarSrc = user?.avatar_url
+    ? (user.avatar_url.startsWith('http') ? user.avatar_url : `${API_BASE}${user.avatar_url}`)
+    : null;
+
   if (!user) return null;
 
   return (
     <div ref={ref} className="relative ml-1">
+
+      {/* Trigger button */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 h-9 pl-2 pr-1.5 rounded-lg
+        className="flex items-center gap-2 h-9 pl-2 pr-2 rounded-lg
                    hover:bg-[var(--gray-100)] dark:hover:bg-white/5 transition-colors"
       >
-        <div className="w-7 h-7 rounded-full bg-primary text-white text-xs
-                        flex items-center justify-center font-semibold shrink-0">
-          {initials(user.name)}
-        </div>
+        {avatarSrc ? (
+          <img src={avatarSrc} alt={user.name}
+            className="w-7 h-7 rounded-full object-cover ring-2 ring-[var(--border)] shrink-0" />
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary/40 to-primary
+                          text-white text-[11px] flex items-center justify-center font-bold shrink-0">
+            {initials(user.name)}
+          </div>
+        )}
         <div className="hidden sm:block text-left">
-          <p className="text-theme-xs font-medium text-[var(--text)] leading-tight">{user.name}</p>
+          <p className="text-[13px] font-medium text-[var(--text)] leading-tight">{user.name}</p>
           <p className="text-[11px] text-[var(--text-muted)] capitalize leading-tight">{user.role}</p>
         </div>
-        <ChevronDown size={13} className="text-[var(--gray-400)]" />
+        <ChevronDown size={13} className={`text-[var(--gray-400)] transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
+      {/* Dropdown */}
       {open && (
         <div
-          className="absolute right-0 mt-2 w-48 bg-[var(--surface)] border border-[var(--border)]
+          className="absolute right-0 mt-2 w-56 bg-[var(--surface)] border border-[var(--border)]
                      rounded-2xl z-50 overflow-hidden"
           style={{ boxShadow: 'var(--shadow-lg)' }}
         >
+          {/* User info header */}
           <div className="px-4 py-3 border-b border-[var(--border)]">
-            <p className="text-theme-sm font-semibold text-[var(--text)]">{user.name}</p>
-            <p className="text-theme-xs text-[var(--text-muted)] mt-0.5">{user.email}</p>
-            <span className={`mt-1.5 inline-block text-[11px] px-2 py-0.5 rounded-full font-medium capitalize
+            <div className="flex items-center gap-3">
+              {avatarSrc ? (
+                <img src={avatarSrc} alt={user.name}
+                  className="w-9 h-9 rounded-full object-cover shrink-0" />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/40 to-primary
+                                text-white text-[13px] flex items-center justify-center font-bold shrink-0">
+                  {initials(user.name)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[var(--text)] truncate">{user.name}</p>
+                <p className="text-[11px] text-[var(--text-muted)] truncate">{user.email}</p>
+              </div>
+            </div>
+            <span className={`mt-2 inline-flex text-[10px] px-2 py-0.5 rounded-full font-semibold capitalize
               ${user.role === 'admin'
-                ? 'bg-primary/10 text-primary'
-                : 'bg-[var(--gray-100)] text-[var(--gray-600)]'}`}>
-              {user.role}
+                ? 'bg-accent/10 text-accent border border-accent/20'
+                : 'bg-primary/10 text-primary border border-primary/20'}`}>
+              {user.role === 'admin' ? 'Administrator' : 'Member'}
             </span>
           </div>
-          <div className="p-1.5">
-            <button
+
+          {/* Menu items */}
+          <div className="p-1.5 space-y-0.5">
+            <MenuItem
+              icon={UserCircle}
+              label="Edit Profile"
+              onClick={() => { setOpen(false); router.push('/profile'); }}
+            />
+            <MenuItem
+              icon={Settings}
+              label={t('settings.title')}
               onClick={() => { setOpen(false); router.push('/settings'); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-theme-sm
-                         text-[var(--gray-700)] dark:text-[var(--gray-300)]
-                         hover:bg-[var(--gray-100)] dark:hover:bg-white/5
-                         rounded-lg transition-colors"
-            >
-              <Settings size={15} className="text-[var(--gray-400)]" />
-              {t('settings.title')}
-            </button>
+            />
+          </div>
+
+          {/* Logout */}
+          <div className="p-1.5 border-t border-[var(--border)]">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-theme-sm
-                         text-accent hover:bg-accent/5 rounded-lg transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg
+                         text-accent hover:bg-accent/8 transition-colors font-medium"
             >
               <LogOut size={15} />
               {t('btn.logout')}
@@ -92,5 +126,21 @@ export default function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function MenuItem({
+  icon: Icon, label, onClick,
+}: { icon: React.ElementType; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg
+                 text-[var(--gray-700)] dark:text-[var(--gray-300)]
+                 hover:bg-[var(--gray-100)] dark:hover:bg-white/5 transition-colors"
+    >
+      <Icon size={15} className="text-[var(--gray-400)] shrink-0" />
+      {label}
+    </button>
   );
 }

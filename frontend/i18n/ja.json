@@ -1,8 +1,10 @@
 {
+  "nav.dashboard":   "ダッシュボード",
   "nav.meetings":    "ミーティング",
   "nav.moms":        "議事録",
   "nav.tasks":       "タスク",
   "nav.calendar":    "カレンダー",
+  "nav.profile":     "プロフィール",
   "nav.settings":    "設定",
 
   "status.scheduled":  "予定済み",

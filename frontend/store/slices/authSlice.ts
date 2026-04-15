@@ -2,10 +2,12 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { api } from '@/services/api';
 
 export interface User {
-  id:    number;
-  name:  string;
-  email: string;
-  role:  'admin' | 'member';
+  id:         number;
+  name:       string;
+  email:      string;
+  role:       'admin' | 'member';
+  avatar_url: string | null;
+  created_at?: string;
 }
 
 interface AuthState {
@@ -27,12 +29,7 @@ function loadAuth(): Pick<AuthState, 'user' | 'token'> {
 
 const { user, token } = loadAuth();
 
-const initialState: AuthState = {
-  user,
-  token,
-  status: 'idle',
-  error:  null,
-};
+const initialState: AuthState = { user, token, status: 'idle', error: null };
 
 export const login = createAsyncThunk(
   'auth/login',
@@ -48,16 +45,30 @@ export const login = createAsyncThunk(
 
 export const fetchMe = createAsyncThunk('auth/fetchMe', async () => {
   const res = await api.get('/auth/me');
-  return res.data;
+  return res.data.user ?? res.data;
 });
+
+export const updateProfile = createAsyncThunk(
+  'auth/updateProfile',
+  async (formData: FormData, { rejectWithValue }) => {
+    try {
+      const res = await api.put('/auth/profile', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data.user;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.error || 'Profile update failed');
+    }
+  }
+);
 
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
     logout(state) {
-      state.user  = null;
-      state.token = null;
+      state.user   = null;
+      state.token  = null;
       state.status = 'idle';
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
@@ -71,17 +82,14 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(login.pending, (state) => {
-        state.status = 'loading';
-        state.error  = null;
-      })
+      .addCase(login.pending,   (state) => { state.status = 'loading'; state.error = null; })
       .addCase(login.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.user   = action.payload.user;
         state.token  = action.payload.token;
         if (typeof window !== 'undefined') {
           localStorage.setItem('token', action.payload.token);
-          localStorage.setItem('user', JSON.stringify(action.payload.user));
+          localStorage.setItem('user',  JSON.stringify(action.payload.user));
         }
       })
       .addCase(login.rejected, (state, action) => {
@@ -92,6 +100,17 @@ const authSlice = createSlice({
         state.user = action.payload;
         if (typeof window !== 'undefined')
           localStorage.setItem('user', JSON.stringify(action.payload));
+      })
+      .addCase(updateProfile.pending,   (state) => { state.status = 'loading'; state.error = null; })
+      .addCase(updateProfile.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.user   = action.payload;
+        if (typeof window !== 'undefined')
+          localStorage.setItem('user', JSON.stringify(action.payload));
+      })
+      .addCase(updateProfile.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error  = action.payload as string;
       });
   },
 });

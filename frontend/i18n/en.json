@@ -1,8 +1,10 @@
 {
+  "nav.dashboard":   "Dashboard",
   "nav.meetings":    "Meetings",
   "nav.moms":        "MOMs",
   "nav.tasks":       "Tasks",
   "nav.calendar":    "Calendar",
+  "nav.profile":     "Profile",
   "nav.settings":    "Settings",
 
   "status.scheduled":  "Scheduled",

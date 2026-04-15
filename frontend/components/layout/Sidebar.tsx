@@ -10,11 +10,11 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 
 const NAV = [
-  { key: 'nav.meetings', icon: Calendar,     href: '/meetings' },
-  { key: 'nav.moms',     icon: FileText,     href: '/mom/search' },
-  { key: 'nav.tasks',    icon: CheckSquare,  href: '/tasks' },
-  { key: 'nav.calendar', icon: CalendarDays, href: '/calendar' },
-  { key: 'nav.settings', icon: Settings,     href: '/settings' },
+  { key: 'nav.dashboard', icon: Calendar,     href: '/dashboard' },
+  { key: 'nav.moms',      icon: FileText,     href: '/mom/search' },
+  { key: 'nav.tasks',     icon: CheckSquare,  href: '/tasks' },
+  { key: 'nav.calendar',  icon: CalendarDays, href: '/calendar' },
+  { key: 'nav.settings',  icon: Settings,     href: '/settings' },
 ];
 
 export default function Sidebar() {

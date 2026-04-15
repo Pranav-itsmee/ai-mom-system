@@ -2,54 +2,82 @@
 
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import Link from 'next/link';
+import { ChevronRight, UserCircle } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import { setTheme, setLanguage } from '@/store/slices/uiSlice';
 import ProtectedLayout from '@/components/layout/ProtectedLayout';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:5000';
+
 export default function SettingsPage() {
-  const { t } = useTranslation();
+  const { t }    = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
   const theme    = useSelector((s: RootState) => s.ui.theme);
   const language = useSelector((s: RootState) => s.ui.language);
   const user     = useSelector((s: RootState) => s.auth.user);
 
+  const avatarSrc = user?.avatar_url
+    ? (user.avatar_url.startsWith('http') ? user.avatar_url : `${API_BASE}${user.avatar_url}`)
+    : null;
+
+  const initials = (user?.name ?? '')
+    .split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
+
   return (
     <ProtectedLayout>
-      <div className="max-w-xl mx-auto space-y-6">
-        <h1 className="text-2xl font-bold text-[var(--text)]">
-          {t('settings.title', { defaultValue: 'Settings' })}
+      <div className="max-w-xl mx-auto space-y-5">
+
+        <h1 className="text-[20px] font-semibold text-[var(--text)]">
+          {t('settings.title')}
         </h1>
+
+        {/* ── Profile quick-link ── */}
+        <Link
+          href="/profile"
+          className="card flex items-center gap-4 hover:shadow-theme-sm hover:border-primary/30
+                     transition-all group no-underline"
+        >
+          {avatarSrc ? (
+            <img src={avatarSrc} alt={user?.name ?? ''}
+              className="w-12 h-12 rounded-full object-cover shrink-0" />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-primary/60
+                            flex items-center justify-center shrink-0 text-primary font-bold text-[15px]">
+              {initials || <UserCircle size={22} />}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-semibold text-[var(--text)] truncate">{user?.name}</p>
+            <p className="text-[12px] text-[var(--text-muted)] truncate">{user?.email}</p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[12px] text-primary font-medium group-hover:underline">
+              Edit Profile
+            </span>
+            <ChevronRight size={14} className="text-[var(--text-muted)]" />
+          </div>
+        </Link>
 
         {/* ── Theme ── */}
         <section className="card space-y-3">
-          <h2 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">
-            {t('settings.theme', { defaultValue: 'Theme' })}
+          <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+            {t('settings.theme')}
           </h2>
-          <div className="flex gap-4">
+          <div className="flex gap-3">
             {(['light', 'dark'] as const).map((opt) => (
               <label
                 key={opt}
-                className={[
-                  'flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors',
-                  theme === opt
-                    ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
-                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]',
-                ].join(' ')}
+                className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border
+                            text-[13px] font-medium transition-colors
+                  ${theme === opt
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-primary'}`}
               >
-                <input
-                  type="radio"
-                  name="theme"
-                  value={opt}
-                  checked={theme === opt}
-                  onChange={() => dispatch(setTheme(opt))}
-                  className="sr-only"
-                />
-                <span>
-                  {opt === 'light'
-                    ? t('settings.theme_light', { defaultValue: 'Light' })
-                    : t('settings.theme_dark', { defaultValue: 'Dark' })}
-                </span>
+                <input type="radio" name="theme" value={opt} checked={theme === opt}
+                  onChange={() => dispatch(setTheme(opt))} className="sr-only" />
+                {opt === 'light' ? '☀️ Light' : '🌙 Dark'}
               </label>
             ))}
           </div>
@@ -57,82 +85,31 @@ export default function SettingsPage() {
 
         {/* ── Language ── */}
         <section className="card space-y-3">
-          <h2 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">
-            {t('settings.language', { defaultValue: 'Language' })}
+          <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+            {t('settings.language')}
           </h2>
-          <div className="flex gap-4">
+          <div className="flex gap-3">
             {([
-              { value: 'en', label: 'English' },
-              { value: 'ja', label: '日本語' },
-            ] as const).map(({ value, label }) => (
+              { value: 'en', label: 'English',  flag: '🇺🇸' },
+              { value: 'ja', label: '日本語',   flag: '🇯🇵' },
+            ] as const).map(({ value, label, flag }) => (
               <label
                 key={value}
-                className={[
-                  'flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors',
-                  language === value
-                    ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
-                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]',
-                ].join(' ')}
+                className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border
+                            text-[13px] font-medium transition-colors
+                  ${language === value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-primary'}`}
               >
-                <input
-                  type="radio"
-                  name="language"
-                  value={value}
-                  checked={language === value}
-                  onChange={() => dispatch(setLanguage(value))}
-                  className="sr-only"
-                />
-                <span>{label}</span>
+                <input type="radio" name="language" value={value} checked={language === value}
+                  onChange={() => dispatch(setLanguage(value))} className="sr-only" />
+                {flag} {label}
               </label>
             ))}
           </div>
         </section>
 
-        {/* ── Profile ── */}
-        <section className="card space-y-3">
-          <h2 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">
-            {t('settings.profile', { defaultValue: 'Profile' })}
-          </h2>
-
-          {user ? (
-            <dl className="space-y-2">
-              <ProfileRow
-                label={t('settings.profile_name', { defaultValue: 'Name' })}
-                value={user.name}
-              />
-              <ProfileRow
-                label={t('settings.profile_email', { defaultValue: 'Email' })}
-                value={user.email}
-              />
-              <ProfileRow
-                label={t('settings.profile_role', { defaultValue: 'Role' })}
-                value={
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    user.role === 'admin'
-                      ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
-                      : 'bg-[var(--primary)]/15 text-[var(--primary)]'
-                  }`}>
-                    {user.role}
-                  </span>
-                }
-              />
-            </dl>
-          ) : (
-            <p className="text-sm text-[var(--text-muted)]">
-              {t('common.loading', { defaultValue: 'Loading…' })}
-            </p>
-          )}
-        </section>
       </div>
     </ProtectedLayout>
-  );
-}
-
-function ProfileRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3">
-      <dt className="w-20 text-xs text-[var(--text-muted)] shrink-0">{label}</dt>
-      <dd className="text-sm text-[var(--text)]">{value}</dd>
-    </div>
   );
 }

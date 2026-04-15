@@ -177,3 +177,76 @@ input, textarea, select { font-family: inherit; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 9999px; }
 .dark ::-webkit-scrollbar-thumb { background: var(--gray-400); }
+
+/* ─────────────────────────────────────────
+   FullCalendar — design system overrides
+───────────────────────────────────────── */
+.fc-theme-custom {
+  padding: 16px;
+}
+.fc-theme-custom .fc-toolbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.fc-theme-custom .fc-button {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 5px 12px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  text-transform: capitalize !important;
+}
+.fc-theme-custom .fc-button:hover {
+  background: var(--bg) !important;
+}
+.fc-theme-custom .fc-button-active,
+.fc-theme-custom .fc-button:focus {
+  background: #00C9A7 !important;
+  border-color: #00C9A7 !important;
+  color: #ffffff !important;
+  outline: none !important;
+}
+.fc-theme-custom .fc-button-group .fc-button {
+  border-radius: 0 !important;
+}
+.fc-theme-custom .fc-button-group .fc-button:first-child { border-radius: 8px 0 0 8px !important; }
+.fc-theme-custom .fc-button-group .fc-button:last-child  { border-radius: 0 8px 8px 0 !important; }
+.fc-theme-custom .fc-col-header-cell-cushion,
+.fc-theme-custom .fc-daygrid-day-number {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.fc-theme-custom .fc-daygrid-day-number:hover { color: var(--primary); }
+.fc-theme-custom .fc-day-today { background: rgba(0, 201, 167, 0.06) !important; }
+.fc-theme-custom .fc-day-today .fc-daygrid-day-number { color: var(--primary) !important; }
+.fc-theme-custom .fc-scrollgrid { border-color: var(--border) !important; }
+.fc-theme-custom .fc-scrollgrid td,
+.fc-theme-custom .fc-scrollgrid th { border-color: var(--border) !important; }
+.fc-theme-custom .fc-event {
+  border-radius: 5px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  padding: 1px 5px !important;
+  border: none !important;
+}
+.fc-theme-custom .fc-more-link {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.dark .fc-theme-custom .fc-button {
+  background: var(--surface) !important;
+}
+.dark .fc-theme-custom .fc-col-header-cell-cushion,
+.dark .fc-theme-custom .fc-daygrid-day-number {
+  color: var(--text-muted);
+}
+.dark .fc-theme-custom .fc-scrollgrid td,
+.dark .fc-theme-custom .fc-scrollgrid th {
+  border-color: var(--border) !important;
+}

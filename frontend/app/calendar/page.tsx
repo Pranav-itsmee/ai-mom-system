@@ -1,223 +1,208 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { RefreshCw, X, Calendar, Clock, User, ExternalLink } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import { fetchMeetings, Meeting } from '@/store/slices/meetingSlice';
 import ProtectedLayout from '@/components/layout/ProtectedLayout';
 import MeetingStatusBadge from '@/components/meetings/MeetingStatusBadge';
 import { api } from '@/services/api';
+import type { EventClickArg } from '@fullcalendar/core';
 
-// Color dots per meeting status
-const STATUS_DOT: Record<Meeting['status'], string> = {
-  scheduled:  'bg-blue-400',
-  recording:  'bg-red-500',
-  processing: 'bg-amber-400',
-  completed:  'bg-green-500',
-  failed:     'bg-red-400',
+// FullCalendar — dynamic import prevents module-level SVG assets from running on server
+const CalendarWidget = dynamic(() => import('@/components/CalendarWidget'), { ssr: false });
+
+// ── Status → colour mapping ───────────────────────────────────────────────────
+const STATUS_COLOR: Record<Meeting['status'], string> = {
+  scheduled:  '#3B82F6',
+  recording:  '#EF4444',
+  processing: '#F59E0B',
+  completed:  '#10B981',
+  failed:     '#F87171',
 };
 
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
+// ── Event detail modal ────────────────────────────────────────────────────────
+
+interface EventModalProps {
+  meeting: Meeting;
+  onClose: () => void;
 }
 
-function getFirstDayOfMonth(year: number, month: number) {
-  return new Date(year, month, 1).getDay(); // 0 = Sunday
+function EventModal({ meeting, onClose }: EventModalProps) {
+  const { i18n } = useTranslation();
+  const router   = useRouter();
+  const locale   = i18n.language === 'ja' ? 'ja-JP' : 'en-US';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-[var(--surface)] rounded-[14px] shadow-theme-lg w-full max-w-sm p-5 z-10">
+        {/* Close */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-[var(--bg)] text-[var(--text-muted)] transition-colors"
+        >
+          <X size={16} />
+        </button>
+
+        {/* Status badge */}
+        <div className="mb-3">
+          <MeetingStatusBadge status={meeting.status} />
+        </div>
+
+        {/* Title */}
+        <h2 className="text-[16px] font-semibold text-[var(--text)] mb-4 pr-6 leading-snug">
+          {meeting.title}
+        </h2>
+
+        {/* Details */}
+        <div className="space-y-2.5 mb-5">
+          <div className="flex items-center gap-2 text-[13px] text-[var(--text-muted)]">
+            <Calendar size={14} className="shrink-0" />
+            <span>
+              {new Intl.DateTimeFormat(locale, { dateStyle: 'full' })
+                .format(new Date(meeting.scheduled_at))}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[13px] text-[var(--text-muted)]">
+            <Clock size={14} className="shrink-0" />
+            <span>
+              {new Intl.DateTimeFormat(locale, { timeStyle: 'short' })
+                .format(new Date(meeting.scheduled_at))}
+              {meeting.duration_seconds != null && (
+                <span className="ml-1 text-[12px]">
+                  · {Math.round(meeting.duration_seconds / 60)} min
+                </span>
+              )}
+            </span>
+          </div>
+          {meeting.organizer && (
+            <div className="flex items-center gap-2 text-[13px] text-[var(--text-muted)]">
+              <User size={14} className="shrink-0" />
+              <span>{meeting.organizer.name}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <button
+          onClick={() => { router.push(`/meetings/${meeting.id}`); onClose(); }}
+          className="btn-primary w-full flex items-center justify-center gap-2 text-[13px]"
+        >
+          <ExternalLink size={13} />
+          View Meeting
+        </button>
+      </div>
+    </div>
+  );
 }
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
   const { t } = useTranslation();
-  const router = useRouter();
   const dispatch = useDispatch<AppDispatch>();
+  const { meetings } = useSelector((s: RootState) => s.meetings);
 
-  const { meetings, status } = useSelector((s: RootState) => s.meetings);
+  const [mounted,  setMounted]  = useState(false);
+  const [syncing,  setSyncing]  = useState(false);
+  const [selected, setSelected] = useState<Meeting | null>(null);
 
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [syncing, setSyncing]           = useState(false);
-
-  const year  = currentMonth.getFullYear();
-  const month = currentMonth.getMonth();
-
+  // FullCalendar requires browser APIs — only render after mount
   useEffect(() => {
-    // Fetch meetings for the visible month range
-    const from = new Date(year, month, 1).toISOString();
-    const to   = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
-    dispatch(fetchMeetings({ from, to }));
-  }, [dispatch, year, month]);
-
-  // Build a map: "YYYY-MM-DD" → Meeting[]
-  const meetingsByDay = new Map<string, Meeting[]>();
-  meetings.forEach((m) => {
-    const day = m.scheduled_at.slice(0, 10);
-    if (!meetingsByDay.has(day)) meetingsByDay.set(day, []);
-    meetingsByDay.get(day)!.push(m);
-  });
-
-  function prevMonth() {
-    setCurrentMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-    setSelectedDate(null);
-  }
-
-  function nextMonth() {
-    setCurrentMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-    setSelectedDate(null);
-  }
+    setMounted(true);
+    // Load meetings for a wide range (±6 months) so all views are populated
+    const from = new Date();
+    from.setMonth(from.getMonth() - 3);
+    const to = new Date();
+    to.setMonth(to.getMonth() + 6);
+    dispatch(fetchMeetings({ from: from.toISOString(), to: to.toISOString() }));
+  }, [dispatch]);
 
   async function handleSync() {
     setSyncing(true);
     try {
       await api.post('/meetings/sync');
-      const from = new Date(year, month, 1).toISOString();
-      const to   = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
-      dispatch(fetchMeetings({ from, to }));
-    } catch {
-      // swallow — backend may not be running
-    } finally {
+      const from = new Date(); from.setMonth(from.getMonth() - 3);
+      const to   = new Date(); to.setMonth(to.getMonth() + 6);
+      dispatch(fetchMeetings({ from: from.toISOString(), to: to.toISOString() }));
+    } catch { /* ignore */ } finally {
       setSyncing(false);
     }
   }
 
-  const daysInMonth  = getDaysInMonth(year, month);
-  const firstDayOfWeek = getFirstDayOfMonth(year, month); // 0=Sun
-
-  const monthLabel = currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
-  const DAY_NAMES  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  const selectedMeetings = selectedDate ? (meetingsByDay.get(selectedDate) ?? []) : [];
+  // Convert meetings → FullCalendar events
+  const events = meetings.map((m) => ({
+    id:              String(m.id),
+    title:           m.title,
+    start:           m.scheduled_at,
+    end:             m.duration_seconds
+      ? new Date(new Date(m.scheduled_at).getTime() + m.duration_seconds * 1000).toISOString()
+      : undefined,
+    backgroundColor: STATUS_COLOR[m.status],
+    borderColor:     STATUS_COLOR[m.status],
+    textColor:       '#ffffff',
+    extendedProps:   { meeting: m },
+  }));
 
   return (
     <ProtectedLayout>
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold text-[var(--text)]">
-            {t('calendar.title', { defaultValue: 'Calendar' })}
-          </h1>
+          <div>
+            <h1 className="text-[20px] font-semibold text-[var(--text)]">
+              {t('calendar.title')}
+            </h1>
+            <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
+              View and track your scheduled meetings
+            </p>
+          </div>
           <button
-            className="btn-secondary flex items-center gap-2 text-sm"
+            className="btn-secondary flex items-center gap-1.5 text-[13px]"
             onClick={handleSync}
             disabled={syncing}
           >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {t('calendar.sync', { defaultValue: 'Sync' })}
+            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
+            {t('calendar.sync')}
           </button>
         </div>
 
-        {/* Month navigation */}
-        <div className="card space-y-4">
-          <div className="flex items-center justify-between">
-            <button
-              className="p-1.5 rounded-lg hover:bg-[var(--bg)] transition-colors text-[var(--text-muted)]"
-              onClick={prevMonth}
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="text-sm font-semibold text-[var(--text)]">{monthLabel}</span>
-            <button
-              className="p-1.5 rounded-lg hover:bg-[var(--bg)] transition-colors text-[var(--text-muted)]"
-              onClick={nextMonth}
-              aria-label="Next month"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Day name headers */}
-          <div className="grid grid-cols-7 gap-1">
-            {DAY_NAMES.map((d) => (
-              <div key={d} className="text-center text-[11px] font-semibold text-[var(--text-muted)] py-1">
-                {d}
-              </div>
-            ))}
-
-            {/* Empty cells before first day */}
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-
-            {/* Day cells */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum  = i + 1;
-              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-              const dayMeetings = meetingsByDay.get(dateStr) ?? [];
-              const isToday    = dateStr === new Date().toISOString().slice(0, 10);
-              const isSelected = dateStr === selectedDate;
-
-              return (
-                <button
-                  key={dateStr}
-                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                  className={[
-                    'flex flex-col items-center rounded-lg py-1.5 px-1 transition-colors text-sm',
-                    isSelected  ? 'bg-[var(--primary)] text-white'          : '',
-                    isToday && !isSelected ? 'font-bold text-[var(--primary)]' : 'text-[var(--text)]',
-                    !isSelected ? 'hover:bg-[var(--bg)]' : '',
-                  ].join(' ')}
-                >
-                  <span>{dayNum}</span>
-                  {dayMeetings.length > 0 && (
-                    <div className="flex gap-0.5 mt-0.5 flex-wrap justify-center max-w-full">
-                      {dayMeetings.slice(0, 3).map((m, idx) => (
-                        <span
-                          key={idx}
-                          className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : STATUS_DOT[m.status]}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        {/* Legend */}
+        <div className="flex flex-wrap gap-3">
+          {(Object.entries(STATUS_COLOR) as [Meeting['status'], string][]).map(([status, color]) => (
+            <span key={status} className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </span>
+          ))}
         </div>
 
-        {/* Selected day meeting list */}
-        {selectedDate && (
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-[var(--text-muted)]">
-              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('default', {
-                weekday: 'long', month: 'long', day: 'numeric',
-              })}
-            </h2>
-
-            {status === 'loading' && (
-              <p className="text-sm text-[var(--text-muted)]">
-                {t('common.loading', { defaultValue: 'Loading…' })}
-              </p>
-            )}
-
-            {selectedMeetings.length === 0 && status !== 'loading' && (
-              <p className="text-sm text-[var(--text-muted)]">
-                {t('calendar.no_meetings', { defaultValue: 'No meetings on this day.' })}
-              </p>
-            )}
-
-            {selectedMeetings.map((m) => (
-              <button
-                key={m.id}
-                className="card w-full text-left hover:border-[var(--primary)] hover:shadow-sm transition-all"
-                onClick={() => router.push(`/meetings/${m.id}`)}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-[var(--text)] truncate">{m.title}</span>
-                  <MeetingStatusBadge status={m.status} />
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  {new Date(m.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
+        {/* FullCalendar — rendered client-only via dynamic import */}
+        <div className="card p-0 overflow-hidden fc-theme-custom">
+          {mounted ? (
+            <CalendarWidget
+              events={events}
+              onEventClick={(info: EventClickArg) => {
+                info.jsEvent.preventDefault();
+                setSelected(info.event.extendedProps.meeting as Meeting);
+              }}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-96 text-[var(--text-muted)] text-[13px]">
+              {t('common.loading')}
+            </div>
+          )}
+        </div>
       </div>
+
+      {selected && (
+        <EventModal meeting={selected} onClose={() => setSelected(null)} />
+      )}
     </ProtectedLayout>
   );
 }

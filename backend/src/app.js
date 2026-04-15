@@ -1,5 +1,6 @@
 const express = require('express');
-const cors = require('cors');
+const cors    = require('cors');
+const path    = require('path');
 
 const authRoutes = require('./routes/auth.routes');
 const meetingRoutes = require('./routes/meeting.routes');
@@ -17,6 +18,9 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded avatars as static files
+app.use('/avatars', express.static(path.resolve(__dirname, '../public/avatars')));
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
