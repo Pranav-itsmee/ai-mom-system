@@ -19,6 +19,7 @@
 10. [Auto-Start on Mac Mini Reboot](#9-auto-start-on-mac-mini-reboot)
 11. [Optional — Nginx Reverse Proxy + Custom Domain](#10-optional--nginx-reverse-proxy--custom-domain)
 12. [Troubleshooting](#11-troubleshooting)
+13. [Chrome Extension — Install & Configure on Any System](#12-chrome-extension--install--configure-on-any-system)
 
 ---
 
@@ -535,6 +536,10 @@ ALTER TABLE meetings
 ALTER TABLE meeting_attendees
   ADD COLUMN status ENUM('present','absent') NOT NULL DEFAULT 'present';
 
+-- Per-user Google Calendar OAuth token
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS google_refresh_token TEXT NULL;
+
 -- In-app notifications
 CREATE TABLE IF NOT EXISTS notifications (
   id          INT NOT NULL AUTO_INCREMENT,
@@ -668,7 +673,7 @@ Open **Safari or Chrome** on the Mac Mini:
 - Frontend: **http://localhost:3000**
 - Backend health: **http://localhost:5000/health**
 
-Login: `admin@company.com` / `Admin@123`
+Login: `developer@mosaique.link` / `Admin@1234`
 
 ---
 
@@ -1027,19 +1032,144 @@ mysql -u root -p ai_mom_db < ~/ai-mom-system/seed_data.sql
 
 ---
 
+## 12. Chrome Extension — Install & Configure on Any System
+
+The AI MOM Chrome Extension auto-records Google Meet sessions and uploads audio for MOM generation.
+
+### 12.1 Share the Extension Folder
+
+The extension lives at `chrome-extension/` in this project. No build step needed — it is loaded directly.
+
+**Option A — USB / File Share:**
+Copy the `chrome-extension/` folder to the target machine (USB, Airdrop, SMB share, etc.).
+
+**Option B — Git Pull:**
+On the target machine, pull the latest repo. The `chrome-extension/` folder is already included.
+
+---
+
+### 12.2 Install the Extension in Chrome
+
+> Works on Windows, Mac, and Linux. Requires Google Chrome (not Chromium Edge or Firefox).
+
+1. Open Chrome and go to: `chrome://extensions`
+2. Enable **Developer mode** (toggle, top-right corner)
+3. Click **Load unpacked**
+4. Select the `chrome-extension/` folder (the folder containing `manifest.json`)
+5. The **AI MOM** extension icon will appear in the toolbar
+
+> If the icon is not visible, click the puzzle-piece icon in the toolbar → pin AI MOM.
+
+---
+
+### 12.3 Configure the Extension API URL
+
+By default the extension points to `http://localhost:5000`. When using a shared server you must update it to point to the Mac Mini's IP.
+
+**How to update:**
+
+1. Open `chrome-extension/background.js`
+2. Find the line:
+   ```js
+   const apiUrl = 'http://localhost:5000/api/v1';
+   ```
+3. Change it to your server IP, for example:
+   ```js
+   const apiUrl = 'http://192.168.1.100:5000/api/v1';
+   ```
+4. Save the file
+5. Go back to `chrome://extensions` → click the **Reload** button (↺) on the AI MOM card
+
+> Each user's machine needs this change if the server is not on localhost.
+
+---
+
+### 12.4 Log In via the Extension
+
+The extension reads your JWT token from the AI MOM web app's localStorage.
+
+1. Open the AI MOM frontend in Chrome: `http://192.168.1.100:3000`
+2. Log in with your account credentials
+3. Open **DevTools** (`F12`) → **Application** tab → **Local Storage** → select the frontend URL
+4. Find the key `token` — copy the value
+5. Click the AI MOM extension icon in the toolbar
+6. Paste the token and click **Save**
+
+> Each user must log in with their own account so the extension records meetings under their identity.
+
+---
+
+### 12.5 Add Google Redirect URI for the Server IP
+
+When users connect their Google Calendar from the server IP (not localhost), Google must allow that redirect.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
+2. Click on your OAuth 2.0 Client ID
+3. Under **Authorised redirect URIs** → click **Add URI**
+4. Add: `http://192.168.1.100:5000/api/v1/auth/google/callback`
+   *(replace `192.168.1.100` with your actual server IP)*
+5. Click **Save**
+
+Also update `backend/.env` on the server:
+```env
+GOOGLE_REDIRECT_URI=http://192.168.1.100:5000/api/v1/auth/google/callback
+FRONTEND_URL=http://192.168.1.100:3000
+```
+
+---
+
+### 12.6 How Recording Works (End-to-End)
+
+```
+User joins Google Meet in Chrome
+  → Extension auto-detects meeting start (MutationObserver)
+  → Extension records tab audio+video (MediaRecorder)
+  → On meeting end → audio sent to server via background.js service worker
+  → Server runs: FFmpeg → Whisper → Claude → MOM stored in DB
+  → MOM visible at: http://<SERVER_IP>:3000/meetings
+```
+
+Extension badge colours:
+- *(no badge)* — idle
+- **REC** (red) — recording
+- **↑** — uploading
+- **✓** (green) — done
+- **✗** (red) — error (check DevTools → background service worker console)
+
+---
+
+### 12.7 Verify Extension is Working
+
+1. Join a test Google Meet call
+2. Extension badge should show **REC**
+3. Leave the meeting
+4. Badge shows **↑** then **✓**
+5. Open AI MOM frontend → **Meetings** tab → the meeting should appear with status `processing`, then `completed`
+6. Click the meeting → **View MOM** to see the generated minutes
+
+**If it fails:**
+- Go to `chrome://extensions` → AI MOM → click **Service worker** link → check console for errors
+- Most common issue: API URL wrong (pointing to localhost instead of server IP)
+- Check `backend/logs/` for Whisper or Claude API errors
+
+---
+
 ## Quick Reference
 
 | What | URL / Command |
 |---|---|
-| Frontend | http://localhost:3000 |
-| Backend API | http://localhost:5000/api/v1 |
-| Backend health check | http://localhost:5000/health |
-| Default admin login | admin@company.com / Admin@123 |
+| Frontend | http://192.168.1.100:3000 |
+| Backend API | http://192.168.1.100:5000/api/v1 |
+| Backend health check | http://192.168.1.100:5000/health |
+| Admin login | developer@mosaique.link / Admin@1234 |
+| Member login | pranavswordsman5335@gmail.com / Pranav@1234 |
 | View PM2 logs | `pm2 logs` |
 | Restart all PM2 | `pm2 restart all` |
 | Docker status | `docker compose ps` |
 | Docker logs | `docker compose logs -f` |
 | MySQL CLI | `mysql -u root -p ai_mom_db` |
+| Extension install | `chrome://extensions` → Developer mode → Load unpacked |
+| Extension config | Edit `chrome-extension/background.js` → update `apiUrl` |
 
 ---
 
