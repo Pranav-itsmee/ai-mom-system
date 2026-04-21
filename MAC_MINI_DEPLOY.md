@@ -18,8 +18,8 @@
 9. [Access From Other Devices (Network Setup)](#8-access-from-other-devices-network-setup)
 10. [Auto-Start on Mac Mini Reboot](#9-auto-start-on-mac-mini-reboot)
 11. [Optional — Nginx Reverse Proxy + Custom Domain](#10-optional--nginx-reverse-proxy--custom-domain)
-12. [Troubleshooting](#11-troubleshooting)
-13. [Chrome Extension — Install & Configure on Any System](#12-chrome-extension--install--configure-on-any-system)
+12. [Chrome Extension — Install & Configure on Any System](#11-chrome-extension--install--configure-on-any-system)
+13. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -33,9 +33,11 @@ Gather these **before** touching the Mac Mini:
 | `backend/.env` file | Already exists in your project |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com |
 | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
-| Google `CLIENT_ID`, `CLIENT_SECRET`, `REFRESH_TOKEN` | Google Cloud Console (see Step 6.4) |
+| Google `CLIENT_ID` and `CLIENT_SECRET` | Google Cloud Console (see Step 5.3) |
 | Mac Mini admin password | Set during macOS setup |
 | USB drive or same Wi-Fi network | For transferring files |
+
+> **No Puppeteer bot.** Recording is done by the Chrome Extension on each user's machine. The server only receives uploaded audio, runs FFmpeg + Whisper + Claude, and serves the frontend.
 
 ---
 
@@ -53,8 +55,6 @@ You need **macOS 12 Monterey or newer**. If older, update via System Settings �
 
 ### 1.2 Install Xcode Command Line Tools
 
-These provide `git`, `make`, `clang` etc.
-
 ```bash
 xcode-select --install
 ```
@@ -68,29 +68,26 @@ xcode-select -p
 
 ### 1.3 Install Homebrew (Mac Package Manager)
 
-Homebrew is required for almost everything else.
-
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-**After it finishes**, follow the printed instructions to add Homebrew to your PATH. It will say something like:
+After it finishes, add Homebrew to your PATH:
 
 ```bash
-# For Apple Silicon (M1/M2/M3/M4):
+# Apple Silicon (M1/M2/M3/M4):
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
-# For Intel Mac:
-echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
-eval "$(/usr/local/bin/brew shellenv)"
+# Intel Mac:
+# echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
 ```
 
 Verify:
 
 ```bash
 brew --version
-# Should print: Homebrew 4.x.x
+# Homebrew 4.x.x
 ```
 
 ---
@@ -122,9 +119,7 @@ On your **Windows PC** (open PowerShell):
 scp -r "C:\path\to\ai-mom-system" your_mac_user@MAC_MINI_IP:~/ai-mom-system
 ```
 
-Replace `your_mac_user` with the Mac Mini username and `MAC_MINI_IP` with its IP (e.g. `192.168.1.50`).
-
-### Method C — Git (If project is on GitHub/GitLab)
+### Method C — Git
 
 ```bash
 cd ~
@@ -135,7 +130,7 @@ git clone https://github.com/YOUR_USERNAME/ai-mom-system.git
 
 ```bash
 ls ~/ai-mom-system
-# Should show: backend/  frontend/  docker-compose.yml  seed_data.sql  etc.
+# Should show: backend/  frontend/  chrome-extension/  docker-compose.yml  etc.
 ```
 
 ---
@@ -143,26 +138,23 @@ ls ~/ai-mom-system
 ## PATH A — Docker Deployment (Recommended)
 
 > Easiest path. Docker handles Node.js, MySQL, and all dependencies inside containers.
-> Skip to PATH B if you prefer to run directly on the Mac Mini.
 
 ### A.1 Install Docker Desktop for Mac
 
 1. Go to: **https://www.docker.com/products/docker-desktop/**
-2. Click **"Download for Mac"** — choose **Apple Silicon** (M1/M2/M3/M4) or **Intel** based on your Mac Mini chip
-   - Check chip: Apple menu → About This Mac → chip name
-3. Open the downloaded `.dmg` file
-4. Drag **Docker** to Applications
-5. Open Docker from Applications — it will ask for your password, click OK
-6. Wait for Docker to fully start (the whale icon in the menu bar stops animating)
+2. Click **"Download for Mac"** — choose **Apple Silicon** or **Intel** based on your chip
+   - Check chip: Apple menu → About This Mac
+3. Open the downloaded `.dmg`, drag Docker to Applications
+4. Open Docker — wait for the whale icon in the menu bar to stop animating
 
-Verify Docker works:
+Verify:
 
 ```bash
 docker --version
 docker compose version
 ```
 
-### A.2 Configure Environment File
+### A.2 Configure Environment Files
 
 ```bash
 cd ~/ai-mom-system/backend
@@ -170,24 +162,24 @@ cp .env.example .env
 nano .env
 ```
 
-Fill in every value (see [Section 5 — Configure Environment Variables](#5-configure-environment-variables)).
+Fill in all values (see [Section 5 — Configure Environment Variables](#5-configure-environment-variables)).
 
 Save with **Ctrl+X → Y → Enter**.
 
-Also set the frontend URL:
+Set the frontend API URL:
 
 ```bash
 cd ~/ai-mom-system/frontend
 nano .env.local
 ```
 
-If you'll access from other devices on the network:
-```
+```env
+# For LAN access from other devices:
 NEXT_PUBLIC_API_URL=http://MAC_MINI_IP:5000/api/v1
-```
 
-Replace `MAC_MINI_IP` with the Mac Mini's IP address (e.g. `http://192.168.1.50:5000/api/v1`).
-For localhost-only access keep: `http://localhost:5000/api/v1`
+# For localhost-only:
+# NEXT_PUBLIC_API_URL=http://localhost:5000/api/v1
+```
 
 ### A.3 Build and Start Everything
 
@@ -198,8 +190,8 @@ docker compose up --build -d
 
 This will:
 - Pull MySQL 8 image (~500 MB, one-time)
-- Build the backend Docker image (installs Node, FFmpeg, Chromium, Puppeteer)
-- Build the frontend Docker image (installs Node, builds Next.js)
+- Build the backend Docker image (installs Node.js and FFmpeg)
+- Build the frontend Docker image (installs Node.js, builds Next.js)
 - Start all 3 services
 
 Watch the logs:
@@ -208,7 +200,7 @@ Watch the logs:
 docker compose logs -f
 ```
 
-Press **Ctrl+C** to stop watching logs (services keep running).
+Press **Ctrl+C** to stop watching (services keep running).
 
 ### A.4 Load Seed Data into Docker MySQL
 
@@ -217,7 +209,11 @@ Press **Ctrl+C** to stop watching logs (services keep running).
 docker compose exec db mysql -u root -p"YOUR_DB_PASSWORD" ai_mom_db < ~/ai-mom-system/seed_data.sql
 ```
 
-Replace `YOUR_DB_PASSWORD` with the password you set in `.env`.
+Or use the Node seed script:
+
+```bash
+docker compose exec backend node scripts/seed.js
+```
 
 ### A.5 Verify Everything is Running
 
@@ -225,7 +221,7 @@ Replace `YOUR_DB_PASSWORD` with the password you set in `.env`.
 docker compose ps
 ```
 
-All three services should show `Up` or `running`:
+Expected:
 ```
 NAME        STATUS
 db          Up (healthy)
@@ -233,9 +229,9 @@ backend     Up
 frontend    Up
 ```
 
-Open browser on Mac Mini: **http://localhost:3000**
+Open browser: **http://localhost:3000**
 
-Login with: `admin@company.com` / `Admin@123`
+Login: `developer@mosaique.link` / `Admin@1234`
 
 ### A.6 Useful Docker Commands
 
@@ -252,9 +248,6 @@ docker compose restart backend
 # View backend logs
 docker compose logs -f backend
 
-# View frontend logs
-docker compose logs -f frontend
-
 # Rebuild after code changes
 docker compose up --build -d
 
@@ -267,23 +260,17 @@ docker stats
 ## PATH B — Manual Deployment
 
 > More steps but gives you direct access to logs and easier debugging.
-> Required if you want to run without Docker.
 
 ### B.1 Install Node.js via NVM
-
-NVM lets you manage multiple Node versions.
 
 ```bash
 # Install NVM
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 
-# Reload shell (or open a new Terminal window)
+# Reload shell
 source ~/.zshrc
 
-# Verify NVM installed
-nvm --version
-
-# Install Node.js 20 (LTS)
+# Install Node.js 20 LTS
 nvm install 20
 nvm use 20
 nvm alias default 20
@@ -297,22 +284,15 @@ npm --version     # 10.x.x
 
 ```bash
 brew install mysql@8.0
-```
 
-After installation, Homebrew will print instructions. Run them:
-
-```bash
-# Add MySQL to PATH (Apple Silicon)
+# Add to PATH (Apple Silicon)
 echo 'export PATH="/opt/homebrew/opt/mysql@8.0/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
-# For Intel Mac use:
-# echo 'export PATH="/usr/local/opt/mysql@8.0/bin:$PATH"' >> ~/.zshrc
-
-# Start MySQL service (starts automatically on login)
+# Start MySQL
 brew services start mysql@8.0
 
-# Wait 5 seconds, then secure the installation
+# Secure the installation
 mysql_secure_installation
 ```
 
@@ -321,23 +301,12 @@ During `mysql_secure_installation`:
 - Remove anonymous users: **Y**
 - Disallow remote root login: **Y**
 - Remove test database: **Y**
-- Reload privilege tables: **Y**
-
-Verify MySQL is running:
-
-```bash
-mysql -u root -p
-# Enter your password — should show mysql> prompt
-exit;
-```
 
 ### B.3 Create the Database
 
 ```bash
 mysql -u root -p
 ```
-
-Run these SQL commands:
 
 ```sql
 CREATE DATABASE ai_mom_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -347,11 +316,9 @@ FLUSH PRIVILEGES;
 EXIT;
 ```
 
-You can use `root` directly instead of creating a new user — just use root credentials in `.env`.
-
 ### B.4 Install FFmpeg
 
-FFmpeg converts video recordings to MP3 for Whisper transcription.
+FFmpeg converts uploaded `.webm` recordings to `.mp3` for Whisper transcription.
 
 ```bash
 brew install ffmpeg
@@ -361,40 +328,25 @@ This may take 5–10 minutes. Verify:
 
 ```bash
 ffmpeg -version
-# Should print FFmpeg version info
-which ffmpeg   # prints path, e.g. /opt/homebrew/bin/ffmpeg
-which ffprobe  # prints path, e.g. /opt/homebrew/bin/ffprobe
+which ffmpeg     # e.g. /opt/homebrew/bin/ffmpeg
+which ffprobe    # e.g. /opt/homebrew/bin/ffprobe
 ```
 
-**Save these paths** — you'll need them in the backend `.env`.
+**Save these paths** — you'll need them in `.env`.
 
-### B.5 Install Chromium (for Puppeteer Bot)
-
-Puppeteer needs Chromium to join Google Meet sessions.
-
-```bash
-brew install --cask chromium
-```
-
-Or let Puppeteer download its own (handled automatically when you do `npm install` in backend).
-
-### B.6 Install PM2 (Process Manager)
-
-PM2 keeps the backend and frontend running and restarts them if they crash.
+### B.5 Install PM2 (Process Manager)
 
 ```bash
 npm install -g pm2
 pm2 --version
 ```
 
-### B.7 Install Project Dependencies
+### B.6 Install Project Dependencies
 
 ```bash
-# Backend dependencies
 cd ~/ai-mom-system/backend
 npm install
 
-# Frontend dependencies
 cd ~/ai-mom-system/frontend
 npm install
 ```
@@ -411,41 +363,37 @@ cp .env.example .env
 nano .env
 ```
 
-Fill in all values:
-
 ```env
 # Server
 PORT=5000
 NODE_ENV=production
-FRONTEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:3000   # change to Mac Mini IP for LAN access
 
-# Database — use values from Step B.3
+# Database
 DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=ai_mom_db
 DB_USER=root
 DB_PASSWORD=YOUR_MYSQL_ROOT_PASSWORD
 
-# JWT — generate a random secret:
-# Run in terminal: openssl rand -hex 32
+# JWT — generate: openssl rand -hex 32
 JWT_SECRET=PASTE_YOUR_64_CHAR_RANDOM_STRING_HERE
 JWT_EXPIRES_IN=7d
 
 # AI Keys
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx        # Whisper transcription
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
 
-# Google OAuth (see Step 5.3 below)
+# Google OAuth — each user connects their own account via the Settings page
 GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxx
-GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
-GOOGLE_REFRESH_TOKEN=1//xxxxxxxxxxxxxx
+GOOGLE_REDIRECT_URI=http://localhost:5000/api/v1/auth/google/callback
 
-# FFmpeg paths (from Step B.4 — run: which ffmpeg)
+# FFmpeg paths (from: which ffmpeg)
 FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
 FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 
-# Temp directory for recordings/uploads
+# Temp directory for uploaded recordings (auto-deleted after MOM generation)
 TEMP_DIR=./temp
 ```
 
@@ -465,37 +413,29 @@ nano .env.local
 ```
 
 ```env
-# For local-only access:
+# Local access only:
 NEXT_PUBLIC_API_URL=http://localhost:5000/api/v1
 
-# For access from other devices on your network:
-# NEXT_PUBLIC_API_URL=http://192.168.1.50:5000/api/v1
+# LAN access from other devices (replace with your Mac Mini's actual IP):
+# NEXT_PUBLIC_API_URL=http://192.168.1.100:5000/api/v1
 ```
 
-Save: **Ctrl+X → Y → Enter**
+### 5.3 Google OAuth Credentials (for per-user Calendar sync)
 
-### 5.3 Getting Google OAuth Credentials (for Calendar API)
-
-Skip this section if you don't use Google Calendar sync.
+Each user connects their own Google account — no shared bot token required.
 
 1. Go to **https://console.cloud.google.com/**
-2. Create a new project or select your existing one
-3. Enable **Google Calendar API**: APIs & Services → Library → Search "Google Calendar API" → Enable
-4. Create OAuth credentials: APIs & Services → Credentials → Create Credentials → OAuth Client ID
+2. Create a project (or select existing)
+3. Enable APIs: **Google Calendar API** and **People API**
+   (APIs & Services → Library → search and enable each)
+4. Create OAuth credentials:
+   - APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID
    - Application type: **Web application**
-   - Authorised redirect URIs: `http://localhost:5000/auth/google/callback`
-5. Copy `Client ID` and `Client Secret` into `.env`
-6. Get Refresh Token using the OAuth Playground:
-   - Go to https://developers.google.com/oauthplayground/
-   - Click settings gear → check "Use your own OAuth credentials" → enter your Client ID and Secret
-   - In Step 1, enter scopes (space-separated):
-     ```
-     https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.other.readonly
-     ```
-     The `contacts.other.readonly` scope is required to resolve attendee display names via the People API.
-   - Click Authorise → sign in with your Google account
-   - In Step 2, click "Exchange authorization code for tokens"
-   - Copy the **Refresh token** into `.env`
+   - Authorised redirect URIs: `http://localhost:5000/api/v1/auth/google/callback`
+   - If deploying to LAN: also add `http://192.168.1.100:5000/api/v1/auth/google/callback`
+5. Copy **Client ID** and **Client Secret** into `backend/.env`
+
+Users connect their own accounts at: **Settings → Connect Google Calendar** in the app.
 
 ### 5.4 Generate a JWT Secret
 
@@ -509,34 +449,44 @@ Copy the output into `JWT_SECRET` in `.env`.
 
 ## 6. Set Up the Database
 
-### 6.1 Run the Seed Data
+### 6.1 Run the Seed Script
 
-This creates all tables and loads sample data.
+Creates all tables and loads sample data (admin + member accounts, example meetings and MOMs).
 
+**Docker:**
+```bash
+docker compose exec backend node scripts/seed.js
+```
+
+**Manual:**
+```bash
+cd ~/ai-mom-system/backend
+node scripts/seed.js
+```
+
+Or load the raw SQL:
 ```bash
 mysql -u root -p ai_mom_db < ~/ai-mom-system/seed_data.sql
 ```
 
-Enter your MySQL password when prompted.
-
-### 6.1b Run Schema Migrations
-
-After loading seed data, apply these column additions if upgrading from an older version:
+### 6.1b Run Schema Migrations (if upgrading from an older version)
 
 ```sql
 -- Connect to DB
 mysql -u root -p ai_mom_db
 
--- Organizer name/email stored directly on meetings (for non-system-user hosts)
+-- Organizer name/email on meetings
 ALTER TABLE meetings
-  ADD COLUMN organizer_name  VARCHAR(255) NULL AFTER organizer_id,
-  ADD COLUMN organizer_email VARCHAR(255) NULL AFTER organizer_name;
+  ADD COLUMN IF NOT EXISTS organizer_name  VARCHAR(255) NULL AFTER organizer_id,
+  ADD COLUMN IF NOT EXISTS organizer_email VARCHAR(255) NULL AFTER organizer_name,
+  ADD COLUMN IF NOT EXISTS location        VARCHAR(500) NULL AFTER meet_link,
+  ADD COLUMN IF NOT EXISTS created_by      INT          NULL AFTER organizer_id;
 
 -- Attendee presence tracking
 ALTER TABLE meeting_attendees
-  ADD COLUMN status ENUM('present','absent') NOT NULL DEFAULT 'present';
+  ADD COLUMN IF NOT EXISTS status ENUM('present','absent') NOT NULL DEFAULT 'present';
 
--- Per-user Google Calendar OAuth token
+-- Per-user Google Calendar token
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS google_refresh_token TEXT NULL;
 
@@ -563,13 +513,13 @@ EXIT;
 
 ### 6.2 Migrate Existing Data (If You Have Real Data on Your PC)
 
-On your **Windows PC**, export the existing database:
+On your **Windows PC**, export:
 
 ```powershell
 mysqldump -u root -p ai_mom_db > ai_mom_backup.sql
 ```
 
-Transfer `ai_mom_backup.sql` to the Mac Mini (via USB or SCP), then import:
+Transfer to Mac Mini, then import:
 
 ```bash
 mysql -u root -p ai_mom_db < ~/ai_mom_backup.sql
@@ -581,27 +531,22 @@ mysql -u root -p ai_mom_db < ~/ai_mom_backup.sql
 mysql -u root -p -e "USE ai_mom_db; SHOW TABLES;"
 ```
 
-Expected output:
+Expected:
 ```
 meeting_attendees
 meetings
 mom_key_points
-mom_versions
 moms
 notifications
 tasks
 users
 ```
 
-> **Note:** `notifications` is created by the migration in Step 6.1b. If it's missing, run that migration.
-
 ---
 
 ## 7. Start the Application
 
 ### If Using Docker (PATH A)
-
-Already covered in Section A.3. To start:
 
 ```bash
 cd ~/ai-mom-system
@@ -617,27 +562,21 @@ cd ~/ai-mom-system/frontend
 npm run build
 ```
 
-This takes 1–3 minutes and creates an optimised production build.
+Takes 1–3 minutes.
 
 #### 7.2 Start Both Services with PM2
 
 ```bash
 cd ~/ai-mom-system
 
-# Start backend
 pm2 start backend/src/server.js --name "mom-backend" --cwd backend
-
-# Start frontend
 pm2 start "npm run start" --name "mom-frontend" --cwd frontend
-
-# Save PM2 process list so it restores after reboot
 pm2 save
 
-# View running processes
 pm2 status
 ```
 
-Expected output:
+Expected:
 ```
 ┌─────────────────┬──────┬────────┬─────────┐
 │ name            │ pid  │ status │ restart │
@@ -650,26 +589,17 @@ Expected output:
 #### 7.3 Useful PM2 Commands
 
 ```bash
-# View live logs
-pm2 logs mom-backend
-pm2 logs mom-frontend
-
-# Restart a service
-pm2 restart mom-backend
-
-# Stop everything
-pm2 stop all
-
-# Start everything
-pm2 start all
-
-# Monitor CPU/memory
-pm2 monit
+pm2 logs mom-backend       # live backend logs
+pm2 logs mom-frontend      # live frontend logs
+pm2 restart mom-backend    # restart backend
+pm2 stop all               # stop everything
+pm2 start all              # start everything
+pm2 monit                  # CPU/memory monitor
 ```
 
 ### 7.4 Test in Browser
 
-Open **Safari or Chrome** on the Mac Mini:
+Open Chrome on the Mac Mini:
 - Frontend: **http://localhost:3000**
 - Backend health: **http://localhost:5000/health**
 
@@ -679,104 +609,82 @@ Login: `developer@mosaique.link` / `Admin@1234`
 
 ## 8. Access From Other Devices (Network Setup)
 
-To access the app from your iPhone, iPad, or other computers on the same Wi-Fi:
+To access the app from other computers or phones on the same Wi-Fi:
 
 ### 8.1 Find the Mac Mini's Local IP
 
 ```bash
 ipconfig getifaddr en0
-# Example output: 192.168.1.50
+# Example: 192.168.1.100
 ```
 
-### 8.2 Update Frontend API URL
+### 8.2 Update Environment Variables
 
 Edit `frontend/.env.local`:
-
 ```env
-NEXT_PUBLIC_API_URL=http://192.168.1.50:5000/api/v1
+NEXT_PUBLIC_API_URL=http://192.168.1.100:5000/api/v1
 ```
 
-If using Docker, rebuild:
+Edit `backend/.env`:
+```env
+FRONTEND_URL=http://192.168.1.100:3000
+GOOGLE_REDIRECT_URI=http://192.168.1.100:5000/api/v1/auth/google/callback
+```
+
+Also add the new redirect URI in Google Cloud Console (see Step 5.3).
+
+Rebuild after changes:
+
 ```bash
+# Docker
 docker compose up --build -d
-```
 
-If using PM2, rebuild and restart:
-```bash
-cd ~/ai-mom-system/frontend
-npm run build
-pm2 restart mom-frontend
-```
-
-Also update backend `.env`:
-```env
-FRONTEND_URL=http://192.168.1.50:3000
+# PM2
+cd ~/ai-mom-system/frontend && npm run build && pm2 restart mom-frontend
+pm2 restart mom-backend
 ```
 
 ### 8.3 Allow Mac Mini Firewall (if enabled)
 
-System Settings → Network → Firewall → Options → add the Terminal app or disable firewall for LAN.
-
-Or allow the specific ports:
+System Settings → Network → Firewall → Options → allow Terminal, or:
 
 ```bash
-# Check if firewall is on
 /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
-
-# If firewall is on, open ports 3000 and 5000
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/node
 ```
 
-### 8.4 Set a Static IP for the Mac Mini (Recommended)
+### 8.4 Set a Static IP (Recommended)
 
 So the IP doesn't change after router restart:
 
-1. System Settings → Network → Wi-Fi (or Ethernet) → Details
-2. Click **TCP/IP** tab
-3. Change "Configure IPv4" from **Using DHCP** to **Manually**
-4. Enter:
-   - IP Address: `192.168.1.100` (or any unused IP in your range)
-   - Subnet Mask: `255.255.255.0`
-   - Router: `192.168.1.1` (your router's IP)
-5. Click OK → Apply
+1. System Settings → Network → Wi-Fi → Details → TCP/IP
+2. Change "Configure IPv4" to **Manually**
+3. Set IP Address: `192.168.1.100`, Subnet: `255.255.255.0`, Router: `192.168.1.1`
+4. Click OK → Apply
 
 ---
 
 ## 9. Auto-Start on Mac Mini Reboot
 
-### If Using Docker
+### Docker
+
+Docker Desktop auto-starts if: Docker Desktop → Settings → General → "Start Docker Desktop when you sign in" → ON.
+
+Containers auto-restart via `restart: unless-stopped` in `docker-compose.yml`.
+
+### PM2
 
 ```bash
-# Docker Desktop auto-starts by default. Verify:
-# Docker Desktop → Settings → General → "Start Docker Desktop when you sign in" → check ON
-
-# Also ensure the containers auto-restart:
-# Already handled by "restart: unless-stopped" in docker-compose.yml
-```
-
-### If Using PM2
-
-```bash
-# Generate a startup script
 pm2 startup
-
-# PM2 will print a command like:
-# sudo env PATH=$PATH:/Users/yourname/.nvm/.../node pm2 startup launchd -u yourname --hp /Users/yourname
-# COPY AND RUN THAT EXACT COMMAND
-
-# Then save the current process list
+# Copy and run the printed command, then:
 pm2 save
 ```
 
-Verify by rebooting:
+Verify after reboot:
 
 ```bash
 sudo reboot
-```
-
-After reboot, check services:
-
-```bash
+# wait, then:
 pm2 status
 ```
 
@@ -784,7 +692,7 @@ pm2 status
 
 ## 10. Optional — Nginx Reverse Proxy + Custom Domain
 
-> Do this only if you want a clean URL like `http://moms.company.local` instead of `http://192.168.1.100:3000`
+> Skip this if direct IP:port access is fine for your setup.
 
 ### 10.1 Install Nginx
 
@@ -803,10 +711,9 @@ Replace the `http { server { ... } }` block with:
 
 ```nginx
 http {
-    # Frontend — Next.js
     server {
         listen 80;
-        server_name moms.company.local 192.168.1.100;
+        server_name 192.168.1.100 moms.company.local;
 
         location / {
             proxy_pass http://127.0.0.1:3000;
@@ -817,7 +724,6 @@ http {
             proxy_cache_bypass $http_upgrade;
         }
 
-        # API — forward /api requests to backend
         location /api {
             proxy_pass http://127.0.0.1:5000;
             proxy_http_version 1.1;
@@ -828,18 +734,14 @@ http {
 }
 ```
 
-Test and restart:
-
 ```bash
 nginx -t
 brew services restart nginx
 ```
 
-Now access the app at: **http://192.168.1.100** (no port number needed)
+Access at: **http://192.168.1.100** (no port needed)
 
-### 10.3 Use a Local Hostname (Optional)
-
-On each computer that needs to access the Mac Mini:
+### 10.3 Local Hostname (Optional)
 
 **Mac/Linux** — add to `/etc/hosts`:
 ```
@@ -851,87 +753,105 @@ On each computer that needs to access the Mac Mini:
 192.168.1.100  moms.company.local
 ```
 
-Now access via: **http://moms.company.local**
-
 ---
 
-## 11. Bot Account Pool — Simultaneous Meeting Recording
+## 11. Chrome Extension — Install & Configure on Any System
 
-> One Google account can only be in **one** Meet call at a time.
-> For N simultaneous meetings you need N bot Google accounts.
+The AI MOM Chrome Extension runs on each user's machine (not on the server). It auto-detects Google Meet sessions, records the audio, and uploads it to the backend when the meeting ends.
 
-### 11.1 Create Bot Google Accounts
+### 11.1 Share the Extension Folder
 
-Create one Gmail/Google Workspace account per concurrent meeting slot:
+The extension lives at `chrome-extension/` inside this project. No build step is needed.
 
-| Slot | Email | Profile Dir |
-|---|---|---|
-| 1 | `bot1@yourcompany.com` | `~/bot-profile-1` |
-| 2 | `bot2@yourcompany.com` | `~/bot-profile-2` |
-| 3 | `bot3@yourcompany.com` | `~/bot-profile-3` |
+**Option A — Copy the folder** (USB, AirDrop, file share, etc.) to the target machine.
 
-Free Gmail accounts work fine (`aimom.bot1@gmail.com` etc.).
+**Option B — Git pull** the project on the target machine — the folder is already included.
 
-### 11.2 Log Each Bot Account into Chrome (One-time per account)
+### 11.2 Install in Chrome
 
-Run this once per bot account on the Mac Mini:
+> Works on Windows, Mac, and Linux. Requires Google Chrome.
 
-```bash
-# Bot account 1
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --user-data-dir=/Users/$(whoami)/bot-profile-1 \
-  --no-first-run
+1. Open Chrome → `chrome://extensions`
+2. Enable **Developer mode** (toggle, top-right)
+3. Click **Load unpacked**
+4. Select the `chrome-extension/` folder (the one containing `manifest.json`)
+5. The **AI MOM** icon appears in the toolbar. If not visible, click the puzzle-piece icon → pin AI MOM.
 
-# Log into bot1@yourcompany.com in the browser that opens, then close it.
-```
+### 11.3 Configure the API URL
 
-```bash
-# Bot account 2
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --user-data-dir=/Users/$(whoami)/bot-profile-2 \
-  --no-first-run
+By default the extension points to `http://localhost:5000`. When using a shared server, update it:
 
-# Log into bot2@yourcompany.com, then close it.
-```
+1. Open `chrome-extension/background.js`
+2. Find:
+   ```js
+   const apiUrl = 'http://localhost:5000/api/v1';
+   ```
+3. Change to your server IP:
+   ```js
+   const apiUrl = 'http://192.168.1.100:5000/api/v1';
+   ```
+4. Save the file
+5. Go to `chrome://extensions` → click **Reload** (↺) on the AI MOM card
 
-Repeat for each bot account.
+### 11.4 Log In via the Extension
 
-### 11.3 Configure the Pool in .env
+1. Open the AI MOM frontend in Chrome (e.g. `http://192.168.1.100:3000`)
+2. Log in with your account
+3. Open DevTools (`F12`) → **Application** → **Local Storage** → select the frontend URL
+4. Find the key `token` → copy the value
+5. Click the AI MOM extension icon → paste the token → **Save**
 
+Each user uses their own token so recordings are attributed to the correct account.
+
+### 11.5 Add Google Redirect URI for Server IP
+
+When users connect Google Calendar from a server URL (not localhost):
+
+1. Go to Google Cloud Console → APIs & Services → Credentials → your OAuth 2.0 Client ID
+2. Under **Authorised redirect URIs** → Add URI:
+   ```
+   http://192.168.1.100:5000/api/v1/auth/google/callback
+   ```
+3. Save
+
+Also update `backend/.env`:
 ```env
-# backend/.env
-BOT_PROFILE_DIRS=/Users/pranav/bot-profile-1,/Users/pranav/bot-profile-2,/Users/pranav/bot-profile-3
+GOOGLE_REDIRECT_URI=http://192.168.1.100:5000/api/v1/auth/google/callback
+FRONTEND_URL=http://192.168.1.100:3000
 ```
 
-### 11.4 How It Works
-
-When a meeting is about to start, the scheduler calls `joinMeeting()`:
+### 11.6 How Recording Works (End-to-End)
 
 ```
-Meeting A scheduled → acquireProfile() → picks bot-profile-1 (free) → Chrome #1 joins
-Meeting B scheduled → acquireProfile() → picks bot-profile-2 (free) → Chrome #2 joins
-Meeting C scheduled → acquireProfile() → bot-profile-3 (free)       → Chrome #3 joins
-Meeting D scheduled → acquireProfile() → ALL PROFILES BUSY          → status: failed
+User joins Google Meet in Chrome
+  → Extension detects meeting start (MutationObserver on page DOM)
+  → MediaRecorder captures tab audio + video (WebM)
+  → Meeting ends → background.js service worker uploads to POST /meetings/upload
+  → Server: FFmpeg (WebM → MP3) → Whisper (transcription) → Claude (MOM JSON)
+  → MOM stored in MySQL
+  → Visible at: http://<SERVER_IP>:3000/meetings
 ```
 
-When a meeting ends, the profile is released back to the pool and available for the next meeting.
+Extension badge states:
+| Badge | Meaning |
+|---|---|
+| *(blank)* | Idle |
+| **REC** (red) | Recording |
+| **↑** | Uploading to server |
+| **✓** (green) | Done — MOM being generated |
+| **✗** (red) | Error (check service worker console) |
 
-### 11.5 Invite Bot Accounts to Meetings
+### 11.7 Verify the Extension is Working
 
-Each bot account must be **invited** (or the meeting must allow "anyone with the link"):
+1. Join a test Google Meet call
+2. Badge shows **REC**
+3. Leave the meeting
+4. Badge shows **↑** → **✓**
+5. Open AI MOM frontend → **Meetings** → the meeting appears with status `processing` then `completed`
+6. Click the meeting → **View MOM**
 
-- If your Google Meet meetings require sign-in: add each bot email as a guest in the Google Calendar event
-- If your meetings use "anyone with the link": no extra step needed
-
-### 11.6 Verify Pool is Loaded
-
-Check the backend logs on startup:
-
-```bash
-pm2 logs mom-backend | grep "profile pool"
-# Should print:
-# Bot profile pool: 2 account(s) — /Users/pranav/bot-profile-1, /Users/pranav/bot-profile-2
-```
+**Debugging:** `chrome://extensions` → AI MOM → **Service worker** link → check Console for errors.
+Most common issue: API URL still pointing to `localhost` instead of the server IP.
 
 ---
 
@@ -940,20 +860,14 @@ pm2 logs mom-backend | grep "profile pool"
 ### "Cannot connect to MySQL"
 
 ```bash
-# Check MySQL is running
 brew services list | grep mysql
-
-# Restart MySQL
 brew services restart mysql@8.0
-
-# Check MySQL port
 lsof -i :3306
 ```
 
-### "FFmpeg not found" error in backend logs
+### "FFmpeg not found" in backend logs
 
 ```bash
-# Find exact path
 which ffmpeg
 which ffprobe
 
@@ -961,7 +875,6 @@ which ffprobe
 FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
 FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 
-# Restart backend
 pm2 restart mom-backend
 # or
 docker compose restart backend
@@ -970,45 +883,27 @@ docker compose restart backend
 ### "EADDRINUSE port 3000" or "port 5000"
 
 ```bash
-# Find what's using the port
 lsof -i :3000
 lsof -i :5000
-
-# Kill the process
 kill -9 PID_NUMBER
 ```
 
 ### Frontend builds but shows blank page
 
 ```bash
-# Check for .env.local
-cat ~/ai-mom-system/frontend/.env.local
+cat ~/ai-mom-system/frontend/.env.local   # check API URL is correct
 
-# Rebuild
 cd ~/ai-mom-system/frontend
 npm run build
 pm2 restart mom-frontend
 ```
 
-### Puppeteer / Chrome fails to launch
-
-```bash
-# Install required dependencies
-brew install --cask chromium
-
-# Or tell Puppeteer to skip Chromium download and use system Chrome:
-# Add to backend/.env:
-PUPPETEER_EXECUTABLE_PATH=/Applications/Chromium.app/Contents/MacOS/Chromium
-```
-
 ### Docker: "permission denied" or "port already in use"
 
 ```bash
-# Check what's on port 3000 / 5000
 lsof -i :3000
 lsof -i :5000
 
-# Stop conflicting processes, then restart Docker
 docker compose down
 docker compose up -d
 ```
@@ -1027,136 +922,23 @@ docker compose logs --tail=100 backend
 
 ```bash
 mysql -u root -p -e "DROP DATABASE ai_mom_db; CREATE DATABASE ai_mom_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p ai_mom_db < ~/ai-mom-system/seed_data.sql
+cd ~/ai-mom-system/backend && node scripts/seed.js
 ```
 
----
+### Google OAuth "redirect_uri_mismatch" (Error 400)
 
-## 12. Chrome Extension — Install & Configure on Any System
+The redirect URI in your `.env` must exactly match what is registered in Google Cloud Console.
 
-The AI MOM Chrome Extension auto-records Google Meet sessions and uploads audio for MOM generation.
-
-### 12.1 Share the Extension Folder
-
-The extension lives at `chrome-extension/` in this project. No build step needed — it is loaded directly.
-
-**Option A — USB / File Share:**
-Copy the `chrome-extension/` folder to the target machine (USB, Airdrop, SMB share, etc.).
-
-**Option B — Git Pull:**
-On the target machine, pull the latest repo. The `chrome-extension/` folder is already included.
-
----
-
-### 12.2 Install the Extension in Chrome
-
-> Works on Windows, Mac, and Linux. Requires Google Chrome (not Chromium Edge or Firefox).
-
-1. Open Chrome and go to: `chrome://extensions`
-2. Enable **Developer mode** (toggle, top-right corner)
-3. Click **Load unpacked**
-4. Select the `chrome-extension/` folder (the folder containing `manifest.json`)
-5. The **AI MOM** extension icon will appear in the toolbar
-
-> If the icon is not visible, click the puzzle-piece icon in the toolbar → pin AI MOM.
-
----
-
-### 12.3 Configure the Extension API URL
-
-By default the extension points to `http://localhost:5000`. When using a shared server you must update it to point to the Mac Mini's IP.
-
-**How to update:**
-
-1. Open `chrome-extension/background.js`
-2. Find the line:
-   ```js
-   const apiUrl = 'http://localhost:5000/api/v1';
-   ```
-3. Change it to your server IP, for example:
-   ```js
-   const apiUrl = 'http://192.168.1.100:5000/api/v1';
-   ```
-4. Save the file
-5. Go back to `chrome://extensions` → click the **Reload** button (↺) on the AI MOM card
-
-> Each user's machine needs this change if the server is not on localhost.
-
----
-
-### 12.4 Log In via the Extension
-
-The extension reads your JWT token from the AI MOM web app's localStorage.
-
-1. Open the AI MOM frontend in Chrome: `http://192.168.1.100:3000`
-2. Log in with your account credentials
-3. Open **DevTools** (`F12`) → **Application** tab → **Local Storage** → select the frontend URL
-4. Find the key `token` — copy the value
-5. Click the AI MOM extension icon in the toolbar
-6. Paste the token and click **Save**
-
-> Each user must log in with their own account so the extension records meetings under their identity.
-
----
-
-### 12.5 Add Google Redirect URI for the Server IP
-
-When users connect their Google Calendar from the server IP (not localhost), Google must allow that redirect.
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
-2. Click on your OAuth 2.0 Client ID
-3. Under **Authorised redirect URIs** → click **Add URI**
-4. Add: `http://192.168.1.100:5000/api/v1/auth/google/callback`
-   *(replace `192.168.1.100` with your actual server IP)*
-5. Click **Save**
-
-Also update `backend/.env` on the server:
-```env
-GOOGLE_REDIRECT_URI=http://192.168.1.100:5000/api/v1/auth/google/callback
-FRONTEND_URL=http://192.168.1.100:3000
-```
-
----
-
-### 12.6 How Recording Works (End-to-End)
-
-```
-User joins Google Meet in Chrome
-  → Extension auto-detects meeting start (MutationObserver)
-  → Extension records tab audio+video (MediaRecorder)
-  → On meeting end → audio sent to server via background.js service worker
-  → Server runs: FFmpeg → Whisper → Claude → MOM stored in DB
-  → MOM visible at: http://<SERVER_IP>:3000/meetings
-```
-
-Extension badge colours:
-- *(no badge)* — idle
-- **REC** (red) — recording
-- **↑** — uploading
-- **✓** (green) — done
-- **✗** (red) — error (check DevTools → background service worker console)
-
----
-
-### 12.7 Verify Extension is Working
-
-1. Join a test Google Meet call
-2. Extension badge should show **REC**
-3. Leave the meeting
-4. Badge shows **↑** then **✓**
-5. Open AI MOM frontend → **Meetings** tab → the meeting should appear with status `processing`, then `completed`
-6. Click the meeting → **View MOM** to see the generated minutes
-
-**If it fails:**
-- Go to `chrome://extensions` → AI MOM → click **Service worker** link → check console for errors
-- Most common issue: API URL wrong (pointing to localhost instead of server IP)
-- Check `backend/logs/` for Whisper or Claude API errors
+1. Check `backend/.env` → `GOOGLE_REDIRECT_URI`
+2. Open Google Cloud Console → APIs & Services → Credentials → your OAuth client
+3. Ensure the value from `.env` appears under **Authorised redirect URIs**
+4. Save and wait 1–2 minutes for Google to propagate the change
 
 ---
 
 ## Quick Reference
 
-| What | URL / Command |
+| What | Value |
 |---|---|
 | Frontend | http://192.168.1.100:3000 |
 | Backend API | http://192.168.1.100:5000/api/v1 |
@@ -1169,7 +951,9 @@ Extension badge colours:
 | Docker logs | `docker compose logs -f` |
 | MySQL CLI | `mysql -u root -p ai_mom_db` |
 | Extension install | `chrome://extensions` → Developer mode → Load unpacked |
-| Extension config | Edit `chrome-extension/background.js` → update `apiUrl` |
+| Extension API URL | Edit `chrome-extension/background.js` → `apiUrl` |
+| Seed database | `node backend/scripts/seed.js` |
+| Clear meetings | `node backend/scripts/clear-meetings.js` |
 
 ---
 
@@ -1178,18 +962,29 @@ Extension badge colours:
 ```
 ~/ai-mom-system/
 ├── backend/
-│   ├── .env                  ← your secrets (never commit this)
+│   ├── .env                    ← your secrets (never commit this)
 │   ├── src/
-│   ├── temp/                 ← uploaded recordings stored here
-│   └── logs/
+│   │   ├── controllers/
+│   │   ├── services/           calendar, claude, ffmpeg, notification, scheduler
+│   │   ├── models/
+│   │   └── routes/
+│   ├── scripts/
+│   │   ├── seed.js             ← creates tables + sample data
+│   │   └── clear-meetings.js   ← resets meetings, keeps users
+│   └── temp/                   ← uploaded recordings (auto-deleted after processing)
 ├── frontend/
-│   ├── .env.local            ← API URL
-│   └── .next/                ← production build output
+│   ├── .env.local              ← API URL
+│   └── .next/                  ← production build
+├── chrome-extension/           ← install this on each user's Chrome
+│   ├── manifest.json
+│   ├── background.js           ← update apiUrl here for LAN deployment
+│   ├── content.js
+│   ├── hook.js
+│   └── popup.html/js
 ├── docker-compose.yml
-├── seed_data.sql
-└── MAC_MINI_DEPLOY.md        ← this file
+└── MAC_MINI_DEPLOY.md          ← this file
 ```
 
 ---
 
-*Generated for AI MOM System v1.0.0 — Pranav*
+*AI MOM System v1.0.0 — Pranav*
