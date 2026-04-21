@@ -32,6 +32,11 @@ const User = sequelize.define(
       allowNull: true,
       defaultValue: null,
     },
+    google_refresh_token: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      defaultValue: null,
+    },
   },
   {
     tableName: 'users',

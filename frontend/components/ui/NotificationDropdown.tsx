@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, CheckCheck, CheckSquare, CalendarDays, Clock, X } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -32,6 +33,7 @@ export default function NotificationDropdown() {
   const dispatch = useDispatch<AppDispatch>();
   const { items, unreadCount } = useSelector((s: RootState) => s.notifications);
 
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -60,8 +62,10 @@ export default function NotificationDropdown() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  async function handleClick(n: Notification) {
+  function handleClick(n: Notification) {
     if (!n.is_read) dispatch(markRead(n.id));
+    setOpen(false);
+    if (n.meeting_id) router.push(`/mom/${n.meeting_id}`);
   }
 
   return (

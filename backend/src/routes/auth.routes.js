@@ -2,7 +2,7 @@ const router  = require('express').Router();
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
-const { register, login, getMe, updateProfile } = require('../controllers/auth.controller');
+const { register, login, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect } = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
 // ── Avatar upload (multer) ────────────────────────────────────────────────────
@@ -31,5 +31,11 @@ router.post('/register', register);
 router.post('/login',    login);
 router.get('/me',        authenticate, getMe);
 router.put('/profile',   authenticate, upload.single('avatar'), updateProfile);
+
+// ── Google Calendar OAuth ─────────────────────────────────────────────────────
+router.get('/google/connect',    authenticate, connectGoogle);
+router.get('/google/callback',   googleCallback);       // public — Google redirects here
+router.get('/google/status',     authenticate, googleStatus);
+router.delete('/google/disconnect', authenticate, googleDisconnect);
 
 module.exports = router;

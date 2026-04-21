@@ -1,54 +1,54 @@
+const fs   = require('fs');
+const path = require('path');
 const calendarService = require('./calendar.service');
 const logger = require('../utils/logger');
 const { sendDeadlineReminders } = require('./notification.service');
 
-let meetBot = null;
-function getBot() {
-  if (!meetBot) meetBot = require('../bot/meetBot');
-  return meetBot;
+const AUDIO_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function cleanupOldAudioFiles() {
+  const tempDir = process.env.TEMP_DIR ? path.resolve(process.env.TEMP_DIR) : null;
+  if (!tempDir || !fs.existsSync(tempDir)) return;
+
+  const cutoff = Date.now() - AUDIO_RETENTION_MS;
+  let deleted = 0;
+
+  for (const file of fs.readdirSync(tempDir)) {
+    if (!file.endsWith('.mp3')) continue;
+    const filePath = path.join(tempDir, file);
+    try {
+      const { mtimeMs } = fs.statSync(filePath);
+      if (mtimeMs < cutoff) {
+        fs.unlinkSync(filePath);
+        deleted++;
+        logger.debug(`Deleted old audio file: ${filePath}`);
+      }
+    } catch (err) {
+      logger.warn(`Could not check/delete audio file ${filePath}: ${err.message}`);
+    }
+  }
+
+  if (deleted > 0) logger.info(`Audio cleanup: deleted ${deleted} MP3 file(s) older than 7 days`);
 }
 
-// Poll every 30 s so we can hit the 2-minute window accurately.
-const POLL_INTERVAL_MS   = 30 * 1000;
-// Join exactly 2 minutes before start — window is ±30 s around that target.
-const JOIN_BEFORE_MS     = 2 * 60 * 1000;       // 120 s
-const WINDOW_HALF_MS     = 30 * 1000;            //  ±30 s tolerance
+// Poll every 30 s to keep calendar in sync
+const POLL_INTERVAL_MS      = 30 * 1000;
+const REMINDER_INTERVAL_MS  = 24 * 60 * 60 * 1000; // once a day
 
-let intervalHandle    = null;
-let reminderInterval  = null;
-const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day
+let intervalHandle   = null;
+let reminderInterval = null;
 
 async function runTick() {
-  logger.debug('Scheduler tick — syncing calendar…');
+  logger.debug('Scheduler tick — syncing calendar for all connected users…');
 
   try {
     const synced = await calendarService.syncMeetings();
     if (synced.length > 0) {
       const created = synced.filter((r) => r.created).length;
-      logger.info(`Calendar sync: ${created} new, ${synced.length - created} updated`);
+      logger.info(`Calendar sync complete: ${created} new, ${synced.length - created} updated across all users`);
     }
   } catch (err) {
     logger.error(`Calendar sync failed: ${err.message}`);
-  }
-
-  try {
-    const imminent = await calendarService.getMeetingsInJoinWindow(
-      JOIN_BEFORE_MS,
-      WINDOW_HALF_MS,
-    );
-    for (const meeting of imminent) {
-      const secsUntil = Math.round((new Date(meeting.scheduled_at) - Date.now()) / 1000);
-      logger.info(
-        `Scheduler: joining "${meeting.title}" (id=${meeting.id}) — starts in ${secsUntil}s`,
-      );
-      getBot()
-        .joinMeeting(meeting)
-        .catch((err) =>
-          logger.error(`Bot join error for meeting ${meeting.id}: ${err.message}`),
-        );
-    }
-  } catch (err) {
-    logger.error(`Scheduler trigger check failed: ${err.message}`);
   }
 }
 
@@ -57,17 +57,18 @@ function startScheduler() {
     logger.warn('Scheduler already running — ignoring duplicate start');
     return;
   }
-  logger.info(
-    `Calendar scheduler started — polling every ${POLL_INTERVAL_MS / 1000}s, ` +
-    `joining ${JOIN_BEFORE_MS / 1000}s before start (±${WINDOW_HALF_MS / 1000}s)`,
-  );
+  logger.info(`Calendar scheduler started — polling every ${POLL_INTERVAL_MS / 1000}s`);
   runTick();
   intervalHandle = setInterval(runTick, POLL_INTERVAL_MS);
   if (intervalHandle.unref) intervalHandle.unref();
 
-  // Run deadline reminders once at startup then once daily
+  // Run deadline reminders + audio cleanup once at startup then once daily
   sendDeadlineReminders();
-  reminderInterval = setInterval(sendDeadlineReminders, REMINDER_INTERVAL_MS);
+  cleanupOldAudioFiles();
+  reminderInterval = setInterval(() => {
+    sendDeadlineReminders();
+    cleanupOldAudioFiles();
+  }, REMINDER_INTERVAL_MS);
   if (reminderInterval.unref) reminderInterval.unref();
 }
 

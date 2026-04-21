@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
@@ -134,104 +134,155 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 // ── Reassign popover ──────────────────────────────────────────────────────────
 
-interface ReassignUser { id: number; name: string; email: string; }
+interface ReassignUser {
+  id: number;
+  name: string;
+  email: string;
+  source?: 'attendee' | 'user';
+  disabled?: boolean;
+  note?: string;
+}
 
-function ReassignPopover({ taskId, currentAssigneeId, onReassigned }: {
+function ReassignPopover({ taskId, currentAssigneeId, attendees = [], onReassigned }: {
   taskId: number;
   currentAssigneeId: number | null;
+  attendees?: any[];
   onReassigned: (user: ReassignUser) => void;
 }) {
   const [open,    setOpen]    = useState(false);
   const [users,   setUsers]   = useState<ReassignUser[]>([]);
+  const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [style,   setStyle]   = useState<React.CSSProperties>({});
-  const btnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => { setMounted(true); }, []);
+  // Attendee options computed first so loadUsers can safely reference them
+  const attendeeOptions: ReassignUser[] = attendees
+    .map((a: any, idx: number) => {
+      const id    = a.user?.id ?? a.user_id ?? null;
+      const name  = a.user?.name  ?? a.name  ?? a.user?.email ?? a.email ?? 'Unknown';
+      const email = a.user?.email ?? a.email ?? '';
+      return {
+        id: id ?? -1 * (idx + 1),
+        name,
+        email,
+        source:   'attendee' as const,
+        disabled: !id,
+        note:     id ? 'Attendee' : 'No account',
+      };
+    })
+    .filter((a) => a.name !== 'Unknown' || a.email);
 
   async function loadUsers() {
     if (users.length) return;
-    try { const res = await api.get('/users'); setUsers(res.data.users ?? []); } catch {}
-  }
-
-  function handleOpen() {
-    if (btnRef.current) {
-      const rect        = btnRef.current.getBoundingClientRect();
-      const popH        = 260;
-      const spaceBelow  = window.innerHeight - rect.bottom;
-      const spaceAbove  = rect.top;
-      if (spaceBelow >= popH || spaceBelow >= spaceAbove) {
-        setStyle({ position: 'fixed', top: rect.bottom + 6, right: window.innerWidth - rect.right });
-      } else {
-        setStyle({ position: 'fixed', bottom: window.innerHeight - rect.top + 6, right: window.innerWidth - rect.right });
-      }
+    setLoading(true);
+    try {
+      const res      = await api.get('/users');
+      const opts     = (res.data.users ?? []).map((u: any) => ({ ...u, source: 'user' as const }));
+      const attIds   = new Set(attendeeOptions.filter((a) => !a.disabled).map((a) => a.id));
+      setUsers([...attendeeOptions, ...opts.filter((u: ReassignUser) => !attIds.has(u.id))]);
+    } catch (err) {
+      console.error('[Reassign] loadUsers failed:', err);
+      setUsers(attendeeOptions);
+    } finally {
+      setLoading(false);
     }
-    setOpen((o) => !o);
-    loadUsers();
   }
 
   async function handlePick(u: ReassignUser) {
+    if (u.disabled || saving) return;
     setSaving(true);
     try {
-      await api.put(`/tasks/${taskId}`, { assignee_id: u.id });
+      await api.put(`/tasks/${taskId}`, { assignee_id: u.id, assigned_to: u.name });
       onReassigned(u);
       setOpen(false);
-    } catch {}
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error('[Reassign] save failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleOpen() {
+    setOpen(true);
+    loadUsers();
   }
 
   return (
-    <div>
+    <>
       <button
-        ref={btnRef}
+        type="button"
         onClick={handleOpen}
         className="flex items-center gap-1 text-[11px] text-[var(--primary-deep)] hover:text-[var(--text)] transition-colors font-semibold"
       >
         <UserCheck size={11} /> Reassign
       </button>
-      {mounted && (
-        <AnimatePresence>
-          {open && createPortal(
-            <>
-              <div className="fixed inset-0 z-[100]" onClick={() => setOpen(false)} />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                transition={{ duration: 0.15 }}
-                style={{ ...style, zIndex: 101 }}
-                className="w-72 rounded-xl border border-[var(--border)]
-                           bg-[var(--surface)] shadow-theme-md py-1 max-h-64 overflow-y-auto"
+
+      {open && typeof window !== 'undefined' && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          {/* Backdrop */}
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)' }}
+            onClick={() => setOpen(false)}
+          />
+          {/* Modal */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: '420px' }}
+            className="rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-theme-lg overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+              <p className="text-[12px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Assign task to</p>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
               >
-                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border)]">Assign to</p>
-                {users.length === 0
-                  ? <p className="px-3 py-2 text-[12px] text-[var(--text-muted)]">Loading…</p>
-                  : users.map((u) => (
-                    <button key={u.id} onClick={() => handlePick(u)} disabled={saving}
-                      className={[
-                        'w-full text-left px-3 py-2.5 hover:bg-[var(--bg)] transition-colors flex items-center gap-2.5',
-                        u.id === currentAssigneeId ? 'bg-[var(--primary)]/8' : '',
-                      ].join(' ')}>
-                      <span className="w-7 h-7 rounded-full bg-[var(--primary)]/20 text-[var(--primary-deep)] text-[11px] font-bold flex items-center justify-center shrink-0">
-                        {u.name.charAt(0).toUpperCase()}
-                      </span>
-                      <span className="min-w-0">
-                        <span className={`block text-[13px] font-medium ${u.id === currentAssigneeId ? 'text-[var(--primary-deep)]' : 'text-[var(--text)]'}`}>{u.name}</span>
-                        <span className="block text-[11px] text-[var(--text-muted)]">{u.email}</span>
-                      </span>
-                      {u.id === currentAssigneeId && (
-                        <span className="ml-auto text-[10px] font-bold text-[var(--primary-deep)] shrink-0">Current</span>
-                      )}
-                    </button>
-                  ))}
-              </motion.div>
-            </>,
-            document.body,
-          )}
-        </AnimatePresence>
+                <XIcon size={14} />
+              </button>
+            </div>
+            <div style={{ maxHeight: '320px', overflowY: 'auto' }} className="py-1">
+              {loading ? (
+                <p className="px-4 py-3 text-[13px] text-[var(--text-muted)]">Loading users…</p>
+              ) : users.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] text-[var(--text-muted)]">No users found.</p>
+              ) : users.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => handlePick(u)}
+                  disabled={saving || !!u.disabled}
+                  className={[
+                    'w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors',
+                    u.disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[var(--bg)] cursor-pointer',
+                    u.id === currentAssigneeId ? 'bg-[var(--primary)]/10' : '',
+                  ].join(' ')}
+                >
+                  <span className="w-8 h-8 rounded-full bg-[var(--primary)]/20 text-[var(--primary-deep)] text-[12px] font-bold flex items-center justify-center shrink-0">
+                    {u.name.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className={`block text-[13px] font-medium truncate ${u.id === currentAssigneeId ? 'text-[var(--primary-deep)]' : 'text-[var(--text)]'}`}>
+                      {u.name}
+                    </span>
+                    <span className="block text-[11px] text-[var(--text-muted)] truncate">
+                      {u.email || u.note || ''}
+                    </span>
+                  </span>
+                  {u.id === currentAssigneeId && (
+                    <span className="shrink-0 text-[10px] font-bold text-[var(--primary-deep)] bg-[var(--primary)]/10 px-1.5 py-0.5 rounded">
+                      Current
+                    </span>
+                  )}
+                  {u.disabled && (
+                    <span className="shrink-0 text-[10px] text-[var(--text-muted)]">No account</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
@@ -839,6 +890,7 @@ export default function MOMPage({ params }: { params: { id: string } }) {
                                 <ReassignPopover
                                   taskId={task.id}
                                   currentAssigneeId={task.assignee_id ?? null}
+                                  attendees={attendees}
                                   onReassigned={(u) => handleReassigned(task.id, u)}
                                 />
                               </Td>

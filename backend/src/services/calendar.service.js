@@ -1,8 +1,33 @@
 const { google } = require('googleapis');
 const { Op } = require('sequelize');
-const { getAuthenticatedClient } = require('../config/googleAuth');
+const { getAuthenticatedClient, getOAuthClient } = require('../config/googleAuth');
 const { Meeting, MeetingAttendee, User } = require('../models');
 const logger = require('../utils/logger');
+
+function normalizeMeetingTitle(title) {
+  return String(title || '')
+    .replace(/^meet\s*-\s*/i, '')
+    .trim()
+    .toLowerCase();
+}
+
+async function findRecordingCreatedMeeting(title, scheduledAt) {
+  const normalizedTitle = normalizeMeetingTitle(title);
+  if (!normalizedTitle) return null;
+
+  const lowerBound = new Date(scheduledAt.getTime() - 12 * 60 * 60 * 1000);
+  const upperBound = new Date(scheduledAt.getTime() + 12 * 60 * 60 * 1000);
+  const candidates = await Meeting.findAll({
+    where: {
+      google_event_id: null,
+      meet_link: null,
+      scheduled_at: { [Op.between]: [lowerBound, upperBound] },
+    },
+    order: [['scheduled_at', 'ASC']],
+  });
+
+  return candidates.find((m) => normalizeMeetingTitle(m.title) === normalizedTitle) || null;
+}
 
 /**
  * Look up the Google profile display name for an email address using the
@@ -61,16 +86,33 @@ function extractMeetLink(event) {
 }
 
 /**
- * Sync upcoming Google Calendar meetings into the local DB.
+ * Sync upcoming Google Calendar meetings into the local DB for a specific auth client.
  * Uses google_event_id as the unique key — creates new or updates existing.
  * Returns an array of { meeting, created } objects.
+ *
+ * @param {object} authClient  - googleapis OAuth2 client (user-specific or shared)
+ * @param {number|null} syncUserId - the user ID whose calendar is being synced (sets created_by)
  */
-async function syncMeetings() {
-  const auth   = getAuthenticatedClient();
-  const events = await fetchUpcomingEvents();
+async function syncMeetingsForAuth(authClient, syncUserId = null) {
+  const auth   = authClient;
+  const calendar = google.calendar({ version: 'v3', auth });
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: now.toISOString(),
+    timeMax: tomorrow.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+  });
+
+  const rawEvents = (res.data.items || []).filter((event) =>
+    event.conferenceData?.entryPoints?.some((ep) => ep.entryPointType === 'video')
+  );
   const results = [];
 
-  for (const event of events) {
+  for (const event of rawEvents) {
     const meetLink = extractMeetLink(event);
     if (!meetLink) continue;
 
@@ -89,6 +131,9 @@ async function syncMeetings() {
       }
     }
 
+    // created_by: prefer organizer user, fall back to the user who triggered the sync
+    const createdBy = organizerId ?? syncUserId;
+
     const existing = await Meeting.findOne({ where: { google_event_id: event.id } });
     let meeting;
 
@@ -103,6 +148,23 @@ async function syncMeetings() {
       results.push({ meeting, created: false });
       logger.debug(`Updated meeting from calendar: "${title}"`);
     } else {
+      const recordingCreated = await findRecordingCreatedMeeting(title, scheduledAt);
+      if (recordingCreated) {
+        const updates = {
+          google_event_id: event.id,
+          title,
+          meet_link: meetLink,
+          scheduled_at: scheduledAt,
+          organizer_name: organizerName,
+          organizer_email: organizerEmail,
+        };
+        if (organizerId) updates.organizer_id = organizerId;
+        if (createdBy) updates.created_by = createdBy;
+        await recordingCreated.update(updates);
+        meeting = recordingCreated;
+        results.push({ meeting, created: false });
+        logger.info(`Merged recording-created meeting with calendar event: "${title}"`);
+      } else {
       meeting = await Meeting.create({
         google_event_id: event.id,
         title,
@@ -111,42 +173,132 @@ async function syncMeetings() {
         status: 'scheduled',
         organizer_name:  organizerName,
         organizer_email: organizerEmail,
-        ...(organizerId ? { organizer_id: organizerId } : {}),
+        ...(organizerId  ? { organizer_id: organizerId } : {}),
+        ...(createdBy    ? { created_by:   createdBy   } : {}),
       });
       results.push({ meeting, created: true });
       logger.info(`New meeting synced from calendar: "${title}" at ${scheduledAt.toISOString()}`);
+      }
     }
 
-    // Sync attendees from event.attendees; also ensure organizer is included
+    // ── Attendee sync ────────────────────────────────────────────────────────
+    // Build the canonical attendee list from the calendar event.
+    // event.attendees entries often have the best displayName for the organizer,
+    // so we look up the organizer's name there first before falling back.
     const calAttendees = Array.isArray(event.attendees) ? [...event.attendees] : [];
+
+    // If organizer is not already in the list, add them
     if (organizerEmail && !calAttendees.some((a) => a.email === organizerEmail)) {
-      calAttendees.push({ email: organizerEmail, displayName: organizerName });
+      calAttendees.push({ email: organizerEmail, displayName: organizerName, organizer: true });
     }
+
+    // Try to fill in organizer display name from their attendee entry if still missing
+    if (!organizerName) {
+      const orgEntry = calAttendees.find((a) => a.email === organizerEmail);
+      if (orgEntry?.displayName) {
+        organizerName = orgEntry.displayName;
+        await meeting.update({ organizer_name: organizerName });
+      }
+    }
+
     for (const attendee of calAttendees) {
       if (!attendee.email) continue;
+
+      // responseStatus: 'accepted' | 'declined' | 'tentative' | 'needsAction'
+      // organizer is always considered present
+      const isDeclined = attendee.responseStatus === 'declined' && !attendee.organizer;
+      const attendeeStatus = isDeclined ? 'absent' : 'present';
+
       const matchedUser = await User.findOne({ where: { email: attendee.email } });
-      const resolvedName = attendee.displayName
+
+      // Best name: calendar displayName → system user name → People API → null
+      const resolvedName =
+        attendee.displayName
         ?? matchedUser?.name
-        ?? await fetchProfileName(auth, attendee.email);
-      const [, created] = await MeetingAttendee.findOrCreate({
+        ?? await fetchProfileName(auth, attendee.email)
+        ?? null;
+
+      // Upsert: always refresh name, user_id, and status from the latest calendar data
+      const existing = await MeetingAttendee.findOne({
         where: { meeting_id: meeting.id, email: attendee.email },
-        defaults: {
-          meeting_id: meeting.id,
-          email: attendee.email,
-          name: resolvedName ?? null,
-          user_id: matchedUser?.id ?? null,
-        },
       });
-      if (!created && (resolvedName || matchedUser)) {
-        await MeetingAttendee.update(
-          { name: resolvedName ?? null, user_id: matchedUser?.id ?? null },
-          { where: { meeting_id: meeting.id, email: attendee.email } },
-        );
+
+      if (existing) {
+        await existing.update({
+          name:    resolvedName ?? existing.name,
+          user_id: matchedUser?.id ?? existing.user_id ?? null,
+          status:  attendeeStatus,
+        });
+      } else {
+        await MeetingAttendee.create({
+          meeting_id: meeting.id,
+          email:      attendee.email,
+          name:       resolvedName,
+          user_id:    matchedUser?.id ?? null,
+          status:     attendeeStatus,
+        });
       }
     }
   }
 
   return results;
+}
+
+/**
+ * Sync ALL users who have connected their Google Calendar.
+ * Each user's calendar is checked independently using their stored refresh token.
+ * google_event_id deduplicates — if two users are in the same meeting, it's only created once.
+ */
+async function syncAllUserCalendars() {
+  const users = await User.findAll({
+    where:      { google_refresh_token: { [Op.ne]: null } },
+    attributes: ['id', 'name', 'email', 'google_refresh_token'],
+  });
+
+  if (!users.length) {
+    logger.debug('Calendar sync: no users have connected Google Calendar');
+    return [];
+  }
+
+  const allResults = [];
+  for (const user of users) {
+    try {
+      const authClient = _getUserAuthClient(user.google_refresh_token);
+      const results    = await syncMeetingsForAuth(authClient, user.id);
+      if (results.length > 0) {
+        logger.info(`Calendar sync [${user.email}]: ${results.filter(r => r.created).length} new, ${results.filter(r => !r.created).length} updated`);
+      } else {
+        logger.debug(`Calendar sync [${user.email}]: no upcoming meetings`);
+      }
+      allResults.push(...results);
+    } catch (err) {
+      logger.error(`Calendar sync failed for user ${user.email}: ${err.message}`);
+    }
+  }
+  return allResults;
+}
+
+/**
+ * Legacy wrapper — kept so existing code that calls syncMeetings() still works.
+ * Delegates to syncAllUserCalendars() when users have connected their accounts,
+ * otherwise falls back to the shared GOOGLE_REFRESH_TOKEN in .env.
+ */
+async function syncMeetings() {
+  const connectedCount = await User.count({
+    where: { google_refresh_token: { [Op.ne]: null } },
+  });
+
+  if (connectedCount > 0) {
+    return syncAllUserCalendars();
+  }
+
+  // Fallback: shared bot token
+  if (!process.env.GOOGLE_REFRESH_TOKEN) {
+    logger.debug('Calendar sync: no users connected and no GOOGLE_REFRESH_TOKEN set — skipping');
+    return [];
+  }
+  logger.debug('Calendar sync: using shared GOOGLE_REFRESH_TOKEN (no per-user tokens found)');
+  return syncMeetingsForAuth(getAuthenticatedClient(), null);
 }
 
 /**
@@ -205,4 +357,47 @@ async function backfillAttendeeNames() {
   }
 }
 
-module.exports = { syncMeetings, getMeetingsInJoinWindow, fetchUpcomingEvents, backfillAttendeeNames };
+/**
+ * Build an OAuth2 client for a specific user's refresh token.
+ */
+function _getUserAuthClient(refreshToken) {
+  const client = getOAuthClient();
+  client.setCredentials({ refresh_token: refreshToken });
+  return client;
+}
+
+/**
+ * Fetch all Google Calendar events (not just Meet events) for a date range.
+ * If userRefreshToken is provided, uses per-user auth; falls back to shared token.
+ */
+async function fetchCalendarEventsForRange(timeMin, timeMax, userRefreshToken = null) {
+  const auth = userRefreshToken
+    ? _getUserAuthClient(userRefreshToken)
+    : getAuthenticatedClient();
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  const res = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: new Date(timeMin).toISOString(),
+    timeMax: new Date(timeMax).toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 250,
+  });
+
+  return (res.data.items || []).map((event) => ({
+    id:          event.id,
+    title:       event.summary || '(No title)',
+    start:       event.start?.dateTime || event.start?.date,
+    end:         event.end?.dateTime   || event.end?.date,
+    allDay:      !event.start?.dateTime,
+    location:    event.location || null,
+    description: event.description || null,
+    meetLink:    extractMeetLink(event),
+    organizer:   event.organizer?.displayName || event.organizer?.email || null,
+    status:      event.status,
+    htmlLink:    event.htmlLink,
+  }));
+}
+
+module.exports = { syncMeetings, syncMeetingsForAuth, syncAllUserCalendars, getMeetingsInJoinWindow, fetchUpcomingEvents, backfillAttendeeNames, fetchCalendarEventsForRange };

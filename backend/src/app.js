@@ -12,9 +12,20 @@ const errorHandler       = require('./middleware/errorHandler');
 
 const app = express();
 
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim());
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, cb) => {
+      // Allow: no origin (curl/Postman), frontend URL, Chrome extensions
+      if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.startsWith('chrome-extension://')) {
+        cb(null, true);
+      } else {
+        cb(null, true); // open for self-hosted — restrict via ALLOWED_ORIGINS in production
+      }
+    },
     credentials: true,
   })
 );

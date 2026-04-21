@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const {
   MOM, MOMKeyPoint, MOMVersion, Meeting, Task, User, MeetingAttendee,
 } = require('../models');
+const { getMeetingAccessLevel, accessibleMeetingIds } = require('../utils/meetingAccess');
 
 // ── Full meeting include (organizer + attendees) ───────────────────────────
 function meetingInclude() {
@@ -24,52 +25,43 @@ function meetingInclude() {
   };
 }
 
-// ── Helper: meeting IDs accessible by a non-admin user ────────────────────
-async function accessibleMeetingIds(userId) {
-  const [attended, owned] = await Promise.all([
-    MeetingAttendee.findAll({ where: { user_id: userId }, attributes: ['meeting_id'] }),
-    Meeting.findAll({
-      where: { [Op.or]: [{ organizer_id: userId }, { created_by: userId }] },
-      attributes: ['id'],
-    }),
-  ]);
-  return [
-    ...new Set([
-      ...attended.map((a) => a.meeting_id),
-      ...owned.map((m) => m.id),
-    ]),
-  ];
+// ── Build Task include, optionally scoped to one assignee ─────────────────
+function taskInclude(assigneeIdFilter = null) {
+  return {
+    model: Task,
+    as: 'tasks',
+    separate: true,
+    order: [['created_at', 'ASC']],
+    ...(assigneeIdFilter ? { where: { assignee_id: assigneeIdFilter } } : {}),
+    include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+  };
 }
 
 /** GET /mom/id/:id — fetch by MOM primary key */
 async function getMOMById(req, res, next) {
   try {
+    // Fetch without tasks first so we can gate on access level
     const mom = await MOM.findByPk(req.params.id, {
       include: [
-        // separate:true avoids cartesian-product slowdown on multi-hasmany
         { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
-        {
-          model: Task,
-          as: 'tasks',
-          separate: true,
-          order: [['created_at', 'ASC']],
-          include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
-        },
         { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
         meetingInclude(),
       ],
     });
     if (!mom) return res.status(404).json({ error: 'MOM not found' });
 
-    // Access control for non-admins
-    if (req.user.role !== 'admin') {
-      const ids = await accessibleMeetingIds(req.user.id);
-      if (!ids.includes(mom.meeting_id)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-    }
+    const level = await getMeetingAccessLevel(req.user, mom.meeting_id);
+    if (level === 'none') return res.status(403).json({ error: 'Access denied' });
 
-    res.json(mom);
+    // task_only users only see their own tasks
+    const tasksFilter = level === 'task_only' ? req.user.id : null;
+    const tasks = await Task.findAll({
+      where: { mom_id: mom.id, ...(tasksFilter ? { assignee_id: tasksFilter } : {}) },
+      order: [['created_at', 'ASC']],
+      include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+    });
+
+    res.json({ ...mom.toJSON(), tasks });
   } catch (err) {
     next(err);
   }
@@ -78,24 +70,29 @@ async function getMOMById(req, res, next) {
 /** GET /mom/:meetingId — fetch by meeting ID */
 async function getMOMByMeeting(req, res, next) {
   try {
+    const level = await getMeetingAccessLevel(req.user, req.params.meetingId);
+    if (level === 'none') return res.status(403).json({ error: 'Access denied' });
+
     const mom = await MOM.findOne({
       where: { meeting_id: req.params.meetingId },
       include: [
         { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
-        {
-          model: Task,
-          as: 'tasks',
-          separate: true,
-          order: [['created_at', 'ASC']],
-          include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
-        },
         { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
         meetingInclude(),
       ],
     });
 
     if (!mom) return res.status(404).json({ error: 'MOM not found for this meeting' });
-    res.json(mom);
+
+    // task_only users only see their own tasks
+    const tasksFilter = level === 'task_only' ? req.user.id : null;
+    const tasks = await Task.findAll({
+      where: { mom_id: mom.id, ...(tasksFilter ? { assignee_id: tasksFilter } : {}) },
+      order: [['created_at', 'ASC']],
+      include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+    });
+
+    res.json({ ...mom.toJSON(), tasks });
   } catch (err) {
     next(err);
   }

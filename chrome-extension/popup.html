@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .header h2 { font-size: 14px; color: #38bdf8; font-weight: 700; }
+    label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin: 14px 0 4px;
+    }
+    input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 7px;
+      color: #f1f5f9;
+      padding: 8px 10px;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #38bdf8; }
+    .hint {
+      font-size: 10px;
+      color: #475569;
+      margin-top: 5px;
+      line-height: 1.5;
+    }
+    .hint code {
+      background: #1e293b;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: monospace;
+    }
+    button {
+      margin-top: 16px;
+      width: 100%;
+      padding: 9px;
+      background: #0ea5e9;
+      border: none;
+      border-radius: 7px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #0284c7; }
+    .saved {
+      text-align: center;
+      font-size: 11px;
+      color: #34d399;
+      margin-top: 8px;
+      height: 16px;
+    }
+    .status {
+      margin-top: 14px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      text-align: center;
+      line-height: 1.4;
+    }
+    .status.idle      { background: #1e293b; color: #64748b; }
+    .status.recording { background: #450a0a; color: #fca5a5; }
+    .status.uploading { background: #431407; color: #fcd34d; }
+    .status.done      { background: #052e16; color: #86efac; }
+    .status.error     { background: #450a0a; color: #fca5a5; }
+    .divider { border: none; border-top: 1px solid #1e293b; margin: 14px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span style="font-size:20px">🧠</span>
+    <h2>AI MOM Recorder</h2>
+  </div>
+
+  <label>Backend API URL</label>
+  <input id="apiUrl" placeholder="http://localhost:5000/api/v1" />
+
+  <label>JWT Token</label>
+  <input id="jwtToken" type="password" placeholder="Paste your login token…" />
+  <p class="hint">
+    Log into AI MOM → open DevTools (F12) → Application → Local Storage →
+    copy the value of <code>token</code>.
+  </p>
+
+  <button id="save">Save Settings</button>
+  <p class="saved" id="savedMsg"></p>
+
+  <hr class="divider" />
+
+  <div class="status idle" id="status">Idle — join a Google Meet to start recording</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

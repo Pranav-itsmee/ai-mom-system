@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const path   = require('path');
+const { google } = require('googleapis');
 const { User } = require('../models');
 
 async function register(req, res, next) {
@@ -121,17 +122,90 @@ async function updateProfile(req, res, next) {
   }
 }
 
+// ── Google Calendar OAuth ─────────────────────────────────────────────────────
+
+function _getOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/v1/auth/google/callback'
+  );
+}
+
+// GET /auth/google/connect  (authenticated)
+// Returns the Google OAuth consent URL; state = signed JWT so callback knows who to update
+async function connectGoogle(req, res) {
+  const oauth2 = _getOAuthClient();
+  const state  = jwt.sign({ id: req.user.id }, process.env.JWT_SECRET, { expiresIn: '10m' });
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/v1/auth/google/callback';
+  console.log('[Google OAuth] redirect_uri being sent to Google:', redirectUri);
+
+  const url = oauth2.generateAuthUrl({
+    access_type: 'offline',
+    prompt:      'consent',
+    scope: [
+      'https://www.googleapis.com/auth/calendar.readonly',
+    ],
+    state,
+  });
+  res.json({ url, debug_redirect_uri: redirectUri });
+}
+
+// GET /auth/google/callback  (public — called by Google)
+async function googleCallback(req, res) {
+  const { code, state } = req.query;
+  try {
+    const { id } = jwt.verify(state, process.env.JWT_SECRET);
+    const oauth2 = _getOAuthClient();
+    const { tokens } = await oauth2.getToken(code);
+
+    if (!tokens.refresh_token) {
+      const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
+      return res.redirect(`${frontendUrl}/settings?google=no_refresh_token`);
+    }
+
+    await User.update({ google_refresh_token: tokens.refresh_token }, { where: { id } });
+
+    const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/settings?google=connected`);
+  } catch (err) {
+    const frontendUrl = process.env.FRONTEND_URL?.split(',')[0] || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/settings?google=error`);
+  }
+}
+
+// GET /auth/google/status  (authenticated)
+async function googleStatus(req, res, next) {
+  try {
+    const user = await User.findByPk(req.user.id);
+    res.json({ connected: !!user?.google_refresh_token });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /auth/google/disconnect  (authenticated)
+async function googleDisconnect(req, res, next) {
+  try {
+    await User.update({ google_refresh_token: null }, { where: { id: req.user.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function _safeUser(user) {
   return {
-    id:         user.id,
-    name:       user.name,
-    email:      user.email,
-    role:       user.role,
-    avatar_url: user.avatar_url ?? null,
-    created_at: user.created_at,
+    id:               user.id,
+    name:             user.name,
+    email:            user.email,
+    role:             user.role,
+    avatar_url:       user.avatar_url ?? null,
+    google_connected: !!user.google_refresh_token,
+    created_at:       user.created_at,
   };
 }
 
-module.exports = { register, login, getMe, updateProfile };
+module.exports = { register, login, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect };

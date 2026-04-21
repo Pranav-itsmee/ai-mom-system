@@ -1,5 +1,23 @@
 const { Task, MOM, User } = require('../models');
 const { createNotification } = require('../services/notification.service');
+const { getMeetingAccessLevel } = require('../utils/meetingAccess');
+
+async function resolveAssignee(assigneeId) {
+  if (assigneeId === undefined || assigneeId === null || assigneeId === '') return null;
+  return User.findByPk(assigneeId, { attributes: ['id', 'name', 'email'] });
+}
+
+async function notifyAssignee({ assigneeId, task, assignerName }) {
+  if (!assigneeId) return;
+  const mom = await MOM.findByPk(task.mom_id, { attributes: ['meeting_id'] });
+  await createNotification(
+    assigneeId,
+    'task_assigned',
+    'Task assigned to you',
+    `${assignerName} assigned you: "${task.title}"`,
+    { taskId: task.id, meetingId: mom?.meeting_id }
+  );
+}
 
 async function listTasks(req, res, next) {
   try {
@@ -10,12 +28,19 @@ async function listTasks(req, res, next) {
     if (priority) where.priority = priority;
     if (assignee) where.assigned_to = assignee;
     if (assignee_id) {
-      // 'me' is a convenience alias for the calling user's own id
       where.assignee_id = assignee_id === 'me' ? req.user.id : parseInt(assignee_id, 10);
     }
 
-    // If filtering by meetingId, first get the mom_id
     if (meetingId) {
+      // Check access level — task_only users can only see their own tasks
+      const level = await getMeetingAccessLevel(req.user, meetingId);
+      if (level === 'none') {
+        return res.json({ total: 0, page: parseInt(page), limit: parseInt(limit), tasks: [] });
+      }
+      if (level === 'task_only') {
+        where.assignee_id = req.user.id;
+      }
+
       const mom = await MOM.findOne({ where: { meeting_id: meetingId }, attributes: ['id'] });
       if (!mom) {
         return res.json({ total: 0, page: parseInt(page), limit: parseInt(limit), tasks: [] });
@@ -57,28 +82,25 @@ async function createTask(req, res, next) {
       return res.status(404).json({ error: 'MOM not found' });
     }
 
+    const assignee = await resolveAssignee(assignee_id);
+
     const task = await Task.create({
       mom_id,
       title,
       description,
-      assigned_to,
-      assignee_id,
+      assigned_to: assigned_to ?? assignee?.name ?? null,
+      assignee_id: assignee?.id ?? assignee_id ?? null,
       deadline,
       priority: priority || 'medium',
       status: status || 'pending',
     });
 
     // Notify assigned user
-    if (assignee_id) {
-      const assigner = req.user?.name || 'Someone';
-      await createNotification(
-        assignee_id,
-        'task_assigned',
-        'New task assigned to you',
-        `${assigner} assigned you: "${title}"`,
-        { taskId: task.id }
-      );
-    }
+    await notifyAssignee({
+      assigneeId: task.assignee_id,
+      task,
+      assignerName: req.user?.name || 'Someone',
+    });
 
     res.status(201).json(task);
   } catch (err) {
@@ -95,11 +117,16 @@ async function updateTask(req, res, next) {
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    const assignee = await resolveAssignee(assignee_id);
+
     const updates = { is_edited: true };
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (assigned_to !== undefined) updates.assigned_to = assigned_to;
-    if (assignee_id !== undefined) updates.assignee_id = assignee_id;
+    if (assignee_id !== undefined) {
+      updates.assignee_id = assignee?.id ?? null;
+      updates.assigned_to = assigned_to ?? assignee?.name ?? null;
+    }
     if (deadline !== undefined) updates.deadline = deadline;
     if (priority !== undefined) updates.priority = priority;
     if (status !== undefined) updates.status = status;
@@ -108,15 +135,12 @@ async function updateTask(req, res, next) {
     await task.update(updates);
 
     // Notify if assignee changed
-    if (assignee_id !== undefined && assignee_id !== null && assignee_id !== prevAssigneeId) {
-      const assigner = req.user?.name || 'Someone';
-      await createNotification(
-        assignee_id,
-        'task_assigned',
-        'Task assigned to you',
-        `${assigner} assigned you: "${task.title}"`,
-        { taskId: task.id }
-      );
+    if (updates.assignee_id !== undefined && updates.assignee_id !== null && updates.assignee_id !== prevAssigneeId) {
+      await notifyAssignee({
+        assigneeId: updates.assignee_id,
+        task,
+        assignerName: req.user?.name || 'Someone',
+      });
     }
 
     const updated = await Task.findByPk(task.id, {

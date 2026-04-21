@@ -335,11 +335,27 @@ async function persistMOM(meeting, data) {
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 /**
+ * Delete a file silently — used to clean up temp audio files after processing.
+ */
+function _deleteTempFile(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      logger.debug(`Deleted temp file: ${filePath}`);
+    }
+  } catch (err) {
+    logger.warn(`Could not delete temp file ${filePath}: ${err.message}`);
+  }
+}
+
+/**
  * Full pipeline:
  *   1. Transcribe audio (OpenAI Whisper) + detect language
  *   2. Generate MOM (Claude) with language-appropriate prompt
  *   3. Normalise to DB format
  *   4. Persist to DB
+ *   5. Clean up temp files (.webm + .mp3)
  */
 async function generateMOM(meetingId, audioPath) {
   const meeting = await Meeting.findByPk(meetingId);
@@ -350,22 +366,41 @@ async function generateMOM(meetingId, audioPath) {
   const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
   logger.info(`Generating MOM for meeting ${meetingId} — audio: ${fileSizeMB} MB`);
 
-  // Step 1 — transcribe + detect language
-  const { transcript, whisperLang } = await transcribeAudio(audioPath);
-  const language = detectLanguage(whisperLang, transcript);
-  logger.info(`Meeting language: ${language} (Whisper reported: ${whisperLang})`);
+  // Collect .webm files to delete immediately — MP3 is kept for 7 days (see scheduler cleanup)
+  const webmFiles = new Set();
+  if (audioPath.endsWith('.mp3')) {
+    const originalWebm = audioPath.slice(0, -4); // strip trailing '.mp3'
+    if (originalWebm) webmFiles.add(originalWebm);
+  } else {
+    // audioPath itself is a webm (no conversion happened)
+    webmFiles.add(audioPath);
+  }
+  if (meeting.audio_path && meeting.audio_path !== audioPath && !meeting.audio_path.endsWith('.mp3')) {
+    webmFiles.add(meeting.audio_path);
+  }
 
-  // Step 2 — generate MOM JSON
-  const rawText = await callClaudeWithTranscript(transcript, language);
+  try {
+    // Step 1 — transcribe + detect language
+    const { transcript, whisperLang } = await transcribeAudio(audioPath);
+    const language = detectLanguage(whisperLang, transcript);
+    logger.info(`Meeting language: ${language} (Whisper reported: ${whisperLang})`);
 
-  // Step 3 — parse + normalise
-  const parsed     = parseMOMResponse(rawText);
-  const normalized = normalizeForDB(parsed, language);
-  if (!normalized.transcript) normalized.transcript = transcript;
+    // Step 2 — generate MOM JSON
+    const rawText = await callClaudeWithTranscript(transcript, language);
 
-  // Step 4 — persist
-  await persistMOM(meeting, normalized);
-  return normalized;
+    // Step 3 — parse + normalise
+    const parsed     = parseMOMResponse(rawText);
+    const normalized = normalizeForDB(parsed, language);
+    if (!normalized.transcript) normalized.transcript = transcript;
+
+    // Step 4 — persist
+    await persistMOM(meeting, normalized);
+
+    return normalized;
+  } finally {
+    // Step 5 — delete raw .webm immediately; .mp3 is kept for 7 days (cleaned by scheduler)
+    for (const f of webmFiles) _deleteTempFile(f);
+  }
 }
 
 module.exports = { generateMOM };

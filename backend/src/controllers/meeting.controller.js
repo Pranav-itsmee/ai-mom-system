@@ -1,5 +1,79 @@
 const { Op } = require('sequelize');
 const { Meeting, User, MOM, MOMKeyPoint, Task, MeetingAttendee } = require('../models');
+const logger = require('../utils/logger');
+const { getMeetingAccessLevel, accessibleMeetingIds } = require('../utils/meetingAccess');
+
+function normalizeMeetCode(meetLink) {
+  if (!meetLink) return null;
+  const match = String(meetLink).match(/meet\.google\.com\/([a-z0-9-]+)/i);
+  return match?.[1]?.toLowerCase() || null;
+}
+
+function normalizeMeetingTitle(title) {
+  return String(title || '')
+    .replace(/^meet\s*-\s*/i, '')
+    .trim()
+    .toLowerCase();
+}
+
+async function findMeetingForMeetLink(meetLink, scheduledAt = null) {
+  const meetCode = normalizeMeetCode(meetLink);
+  if (!meetCode) return null;
+
+  const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
+  const validDate = !Number.isNaN(scheduledDate.getTime()) ? scheduledDate : new Date();
+  const lowerBound = new Date(validDate.getTime() - 12 * 60 * 60 * 1000);
+  const upperBound = new Date(validDate.getTime() + 12 * 60 * 60 * 1000);
+
+  const candidates = await Meeting.findAll({
+    where: {
+      meet_link: { [Op.ne]: null },
+      status: { [Op.in]: ['scheduled', 'recording', 'processing'] },
+      scheduled_at: { [Op.between]: [lowerBound, upperBound] },
+    },
+    order: [
+      ['status', 'ASC'],
+      ['scheduled_at', 'ASC'],
+    ],
+  });
+
+  const matches = candidates.filter((meeting) => normalizeMeetCode(meeting.meet_link) === meetCode);
+  const statusRank = { recording: 0, scheduled: 1, processing: 2 };
+  matches.sort((a, b) => (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9));
+  return matches[0] || null;
+}
+
+async function findMeetingForUpload({ meetLink, title, scheduledAt }) {
+  const byMeetLink = await findMeetingForMeetLink(meetLink, scheduledAt);
+  if (byMeetLink) return byMeetLink;
+
+  const normalizedTitle = normalizeMeetingTitle(title);
+  if (!normalizedTitle) return null;
+
+  const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
+  const validDate = !Number.isNaN(scheduledDate.getTime()) ? scheduledDate : new Date();
+  const lowerBound = new Date(validDate.getTime() - 12 * 60 * 60 * 1000);
+  const upperBound = new Date(validDate.getTime() + 12 * 60 * 60 * 1000);
+
+  const candidates = await Meeting.findAll({
+    where: {
+      status: { [Op.in]: ['scheduled', 'recording', 'processing'] },
+      scheduled_at: { [Op.between]: [lowerBound, upperBound] },
+    },
+  });
+
+  const matches = candidates.filter((meeting) => (
+    normalizeMeetingTitle(meeting.title) === normalizedTitle
+  ));
+  const statusRank = { recording: 0, scheduled: 1, processing: 2 };
+  matches.sort((a, b) => {
+    const linkRank = Number(!b.meet_link) - Number(!a.meet_link);
+    if (linkRank !== 0) return linkRank;
+    return (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+  });
+
+  return matches[0] || null;
+}
 
 async function listMeetings(req, res, next) {
   try {
@@ -11,6 +85,12 @@ async function listMeetings(req, res, next) {
       where.scheduled_at = {};
       if (from) where.scheduled_at[Op.gte] = new Date(from);
       if (to) where.scheduled_at[Op.lte] = new Date(to);
+    }
+
+    // Non-admins only see meetings they are part of (attendee, organiser, creator, or task-assigned)
+    if (req.user.role !== 'admin') {
+      const ids = await accessibleMeetingIds(req.user.id);
+      where.id = ids.length ? { [Op.in]: ids } : { [Op.in]: [-1] };
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -38,6 +118,9 @@ async function listMeetings(req, res, next) {
 
 async function getMeeting(req, res, next) {
   try {
+    const level = await getMeetingAccessLevel(req.user, req.params.id);
+    if (level === 'none') return res.status(403).json({ error: 'Access denied' });
+
     const meeting = await Meeting.findByPk(req.params.id, {
       include: [
         { model: User, as: 'organizer', attributes: ['id', 'name', 'email'] },
@@ -70,7 +153,19 @@ async function getMeeting(req, res, next) {
 async function syncCalendar(req, res, next) {
   try {
     const calendarService = require('../services/calendar.service');
-    const results = await calendarService.syncMeetings();
+    const { getOAuthClient } = require('../config/googleAuth');
+
+    // Sync only the current user's own calendar if they've connected Google
+    const currentUser = await User.findByPk(req.user.id, { attributes: ['id', 'google_refresh_token'] });
+    let results;
+    if (currentUser?.google_refresh_token) {
+      const client = getOAuthClient();
+      client.setCredentials({ refresh_token: currentUser.google_refresh_token });
+      results = await calendarService.syncMeetingsForAuth(client, req.user.id);
+    } else {
+      // Fallback to shared token
+      results = await calendarService.syncMeetings();
+    }
 
     const created = results.filter((r) => r.created).length;
     const updated = results.length - created;
@@ -128,62 +223,6 @@ async function deleteMeeting(req, res, next) {
   }
 }
 
-/**
- * POST /meetings/:id/admit
- * Authorised users trigger this to admit participants waiting in the bot's lobby.
- * The bot never auto-admits — this is the only code path that calls admitWaiting().
- */
-async function admitWaiting(req, res, next) {
-  try {
-    const meetBot = require('../bot/meetBot');
-    const admitted = await meetBot.admitWaiting(parseInt(req.params.id, 10));
-    res.json({ admitted, count: admitted.length });
-  } catch (err) {
-    // 404-style error if no active session
-    if (err.message.includes('No active bot session')) {
-      return res.status(404).json({ error: err.message });
-    }
-    next(err);
-  }
-}
-
-/**
- * GET /meetings/:id/waiting
- * Returns the current count of participants waiting in the lobby.
- */
-async function getWaiting(req, res, next) {
-  try {
-    const meetBot = require('../bot/meetBot');
-    const count = meetBot.getWaitingCount(parseInt(req.params.id, 10));
-    res.json({ meeting_id: parseInt(req.params.id, 10), waiting: count });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * POST /meetings/:id/record
- * Immediately start the bot for a meeting that is already created.
- */
-async function startRecording(req, res, next) {
-  try {
-    const meeting = await Meeting.findByPk(req.params.id);
-    if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
-    if (!meeting.meet_link) return res.status(422).json({ error: 'Meeting has no meet_link' });
-
-    const meetBot = require('../bot/meetBot');
-    // Fire-and-forget — bot joins asynchronously
-    meetBot.joinMeeting(meeting).catch((err) => {
-      require('../utils/logger').error(`Bot failed for meeting ${meeting.id}: ${err.message}`);
-      meeting.update({ status: 'failed' });
-    });
-
-    await meeting.update({ status: 'recording' });
-    res.json({ ok: true, message: 'Bot is joining the meeting…', meeting_id: meeting.id });
-  } catch (err) {
-    next(err);
-  }
-}
 
 async function createMeeting(req, res, next) {
   try {
@@ -226,6 +265,43 @@ async function createMeeting(req, res, next) {
   }
 }
 
+async function startExtensionRecording(req, res, next) {
+  try {
+    const { title, scheduled_at, meet_link } = req.body;
+    if (!meet_link && !title) {
+      return res.status(400).json({ error: 'meet_link or title is required' });
+    }
+
+    const scheduledAt = scheduled_at || new Date().toISOString();
+    let meeting = await findMeetingForUpload({ meetLink: meet_link, title, scheduledAt });
+
+    if (meeting) {
+      if (meeting.status === 'scheduled') {
+        await meeting.update({
+          status: 'recording',
+          started_at: meeting.started_at || new Date(),
+        });
+      }
+      logger.info(`Extension recording attached to meeting ${meeting.id}: "${meeting.title}"`);
+    } else {
+      meeting = await Meeting.create({
+        title: title || 'Google Meet Recording',
+        scheduled_at: new Date(scheduledAt),
+        meet_link: meet_link || null,
+        created_by: req.user.id,
+        organizer_id: req.user.id,
+        status: 'recording',
+        started_at: new Date(),
+      });
+      logger.info(`Extension recording created meeting ${meeting.id}: "${meeting.title}"`);
+    }
+
+    res.status(200).json({ ok: true, meeting });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function uploadMeeting(req, res, next) {
   try {
     const { title, scheduled_at, location, meet_link, attendee_emails } = req.body;
@@ -236,15 +312,39 @@ async function uploadMeeting(req, res, next) {
       return res.status(400).json({ error: 'Meeting recording file is required' });
     }
 
-    const meeting = await Meeting.create({
-      title,
-      scheduled_at: new Date(scheduled_at),
-      meet_link:    meet_link  || null,
-      location:     location   || null,
-      created_by:   req.user.id,
-      organizer_id: req.user.id,
-      status:       'processing',
-    });
+    let meeting = await findMeetingForUpload({ meetLink: meet_link, title, scheduledAt: scheduled_at });
+
+    if (meeting) {
+      const update = {
+        title: title || meeting.title,
+        location: location || meeting.location,
+        meet_link: meet_link || meeting.meet_link,
+        status: 'processing',
+        ended_at: new Date(),
+      };
+      if (!meeting.started_at) update.started_at = new Date(scheduled_at);
+      if (meeting.started_at) {
+        update.duration_seconds = Math.max(
+          0,
+          Math.round((Date.now() - new Date(meeting.started_at).getTime()) / 1000),
+        );
+      }
+      await meeting.update(update);
+      logger.info(`Upload attached to existing meeting ${meeting.id}: "${meeting.title}"`);
+    } else {
+      meeting = await Meeting.create({
+        title,
+        scheduled_at: new Date(scheduled_at),
+        meet_link:    meet_link  || null,
+        location:     location   || null,
+        created_by:   req.user.id,
+        organizer_id: req.user.id,
+        status:       'processing',
+        started_at:   new Date(scheduled_at),
+        ended_at:     new Date(),
+      });
+      logger.info(`Upload created new meeting ${meeting.id}: "${meeting.title}"`);
+    }
 
     if (attendee_emails) {
       const emails = String(attendee_emails).split(',').map((e) => e.trim()).filter(Boolean);
@@ -278,7 +378,6 @@ async function uploadMeeting(req, res, next) {
 
     // Async MOM generation — don't await
     const claudeService = require('../services/claude.service');
-    const logger        = require('../utils/logger');
     claudeService.generateMOM(meeting.id, audioPath)
       .then(() => logger.info(`Upload MOM generated for meeting ${meeting.id}`))
       .catch(async (err) => {
@@ -355,4 +454,31 @@ async function updateMeetingInfo(req, res, next) {
   }
 }
 
-module.exports = { listMeetings, getMeeting, createMeeting, uploadMeeting, syncCalendar, updateMeetingStatus, deleteMeeting, admitWaiting, getWaiting, startRecording, updateMeetingInfo };
+/**
+ * GET /meetings/calendar-events?from=<ISO>&to=<ISO>
+ * Returns raw Google Calendar events for the given date range.
+ */
+async function getCalendarEvents(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    const timeMin = from || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const timeMax = to   || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Use the logged-in user's own Google refresh token
+    const user = await User.findByPk(req.user.id, { attributes: ['id', 'google_refresh_token'] });
+    if (!user?.google_refresh_token) {
+      return res.json({ events: [], connected: false });
+    }
+
+    const { fetchCalendarEventsForRange } = require('../services/calendar.service');
+    const events = await fetchCalendarEventsForRange(timeMin, timeMax, user.google_refresh_token);
+    res.json({ events, connected: true });
+  } catch (err) {
+    if (err.message?.includes('invalid_grant') || err.code === 401) {
+      return res.json({ events: [], connected: false, error: 'Google token expired — please reconnect' });
+    }
+    next(err);
+  }
+}
+
+module.exports = { listMeetings, getMeeting, createMeeting, startExtensionRecording, uploadMeeting, syncCalendar, updateMeetingStatus, deleteMeeting, updateMeetingInfo, getCalendarEvents };

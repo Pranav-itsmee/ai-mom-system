@@ -11,10 +11,9 @@ const {
   syncCalendar,
   updateMeetingStatus,
   deleteMeeting,
-  admitWaiting,
-  getWaiting,
-  startRecording,
+  startExtensionRecording,
   updateMeetingInfo,
+  getCalendarEvents,
 } = require('../controllers/meeting.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
@@ -42,18 +41,15 @@ const upload = multer({
 
 router.use(authenticate);
 
-router.get('/',        listMeetings);
-router.post('/',       createMeeting);
-router.post('/upload', upload.single('file'), uploadMeeting);
-router.post('/sync',   syncCalendar);
-router.get('/:id',     getMeeting);
-router.patch('/:id/status',  updateMeetingStatus);
-router.delete('/:id',        deleteMeeting);
-
-// Admission control — bot never auto-admits; only triggered by authorised API call
-router.get('/:id/waiting',   getWaiting);
-router.post('/:id/admit',    admitWaiting);
-router.post('/:id/record',   startRecording);
-router.patch('/:id/info',    updateMeetingInfo);
+router.get('/',                 listMeetings);
+router.post('/',                createMeeting);
+router.post('/extension/start', startExtensionRecording);
+router.post('/upload',          upload.single('file'), uploadMeeting);
+router.post('/sync',            syncCalendar);
+router.get('/calendar-events',  getCalendarEvents);
+router.get('/:id',              getMeeting);
+router.patch('/:id/status',     updateMeetingStatus);
+router.patch('/:id/info',       updateMeetingInfo);
+router.delete('/:id',           deleteMeeting);
 
 module.exports = router;

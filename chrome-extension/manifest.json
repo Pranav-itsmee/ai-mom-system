@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AI MOM Recorder",
+  "version": "1.0.0",
+  "description": "Records Google Meet sessions and auto-generates AI Minutes of Meeting",
+  "permissions": ["storage", "notifications"],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "http://localhost:5000/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
