@@ -6,6 +6,9 @@ const {
   register,
   login,
   extensionLogin,
+  requestPasswordReset,
+  validatePasswordResetToken,
+  resetPassword,
   getMe,
   updateProfile,
   connectGoogle,
@@ -14,6 +17,21 @@ const {
   googleDisconnect,
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
+const { createRateLimiter } = require('../middleware/rateLimit.middleware');
+
+const passwordResetWindowMinutes = parseInt(process.env.PASSWORD_RESET_RATE_LIMIT_WINDOW_MINUTES || '15', 10);
+const passwordResetRequestLimiter = createRateLimiter({
+  keyPrefix: 'password-reset-request',
+  windowMs: passwordResetWindowMinutes * 60 * 1000,
+  max: parseInt(process.env.PASSWORD_RESET_RATE_LIMIT_MAX || '5', 10),
+  message: 'Too many password reset requests. Please try again later.',
+});
+const passwordResetTokenLimiter = createRateLimiter({
+  keyPrefix: 'password-reset-token',
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  message: 'Too many reset attempts. Please request a new password reset link.',
+});
 
 // ── Avatar upload (multer) ────────────────────────────────────────────────────
 const avatarDir = path.resolve(__dirname, '../../public/avatars');
@@ -40,6 +58,9 @@ const upload = multer({
 router.post('/register', register);
 router.post('/login',    login);
 router.post('/extension-login', extensionLogin);
+router.post('/password-reset/request', passwordResetRequestLimiter, requestPasswordReset);
+router.get('/password-reset/validate', passwordResetTokenLimiter, validatePasswordResetToken);
+router.post('/password-reset/reset', passwordResetTokenLimiter, resetPassword);
 router.get('/me',        authenticate, getMe);
 router.put('/profile',   authenticate, upload.single('avatar'), updateProfile);
 

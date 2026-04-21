@@ -2,6 +2,7 @@ require('dotenv').config();
 const app = require('./app');
 const { sequelize } = require('./config/db');
 const logger = require('./utils/logger');
+const { ensureUserSecurityColumns } = require('./services/schema.service');
 const { startScheduler, stopScheduler } = require('./services/scheduler.service');
 const { backfillAttendeeNames } = require('./services/calendar.service');
 
@@ -15,6 +16,8 @@ async function startServer() {
     // In production, replace sync({alter}) with proper Sequelize migrations
     await sequelize.sync();
     logger.info('Database schema synced.');
+    await ensureUserSecurityColumns();
+    logger.info('User security columns ensured.');
 
     // Backfill attendee names for any rows missing them (runs once, no-op when all filled)
     backfillAttendeeNames()
