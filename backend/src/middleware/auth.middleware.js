@@ -20,11 +20,18 @@ async function authenticate(req, res, next) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findByPk(decoded.id, {
-      attributes: ['id', 'name', 'email', 'role', 'password'],
+      attributes: ['id', 'name', 'email', 'role', 'password', 'password_changed_at'],
     });
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
+    }
+
+    if (user.password_changed_at && decoded.iat) {
+      const passwordChangedAt = Math.floor(new Date(user.password_changed_at).getTime() / 1000);
+      if (Number.isFinite(passwordChangedAt) && passwordChangedAt > decoded.iat) {
+        return res.status(401).json({ error: 'Session expired. Please sign in again.' });
+      }
     }
 
     if (decoded.token_type === 'extension') {

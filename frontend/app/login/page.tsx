@@ -1,24 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Globe, Sun, Moon, Loader2 } from 'lucide-react';
+import AuthShell from '@/components/auth/AuthShell';
 import { login } from '@/store/slices/authSlice';
-import { setTheme, setLanguage } from '@/store/slices/uiSlice';
 import { RootState, AppDispatch } from '@/store';
 
 export default function LoginPage() {
-  const { t }    = useTranslation();
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
-  const router   = useRouter();
-  const { token, status, error } = useSelector((s: RootState) => s.auth);
-  const theme    = useSelector((s: RootState) => s.ui.theme);
-  const language = useSelector((s: RootState) => s.ui.language);
-  const isDark   = theme === 'dark';
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { token, status, error } = useSelector((state: RootState) => state.auth);
 
-  const [email,    setEmail]    = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
 
@@ -31,162 +30,94 @@ export default function LoginPage() {
     dispatch(login({ email, password }));
   }
 
+  const resetSuccess = searchParams.get('reset') === 'success';
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+    <AuthShell
+      title={t('auth.login_title')}
+      subtitle={t('auth.login_subtitle')}
+    >
+      {resetSuccess && (
+        <div className="mb-5 alert alert-success" role="status">
+          <p>{t('auth.login_reset_success')}</p>
+        </div>
+      )}
 
-      {/* ── Top bar ── */}
-      <div className="flex items-center justify-between px-5 py-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center"
-               style={{ boxShadow: 'var(--shadow-sm)' }}>
-            <span className="text-sm">🧠</span>
-          </div>
-          <span className="text-[14px] font-bold text-[var(--text)]">AI MOM</span>
+      {error && (
+        <div className="mb-5 alert alert-error" role="alert">
+          <p>{error || t('auth.invalid_creds')}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+        <div>
+          <label htmlFor="email" className="input-label">
+            {t('auth.email')}
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="input"
+            placeholder="you@example.com"
+            required
+            autoFocus
+            autoComplete="email"
+          />
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => dispatch(setLanguage(language === 'en' ? 'ja' : 'en'))}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[var(--border)]
-                       bg-[var(--surface)] text-[var(--text)] text-[12px] font-medium
-                       hover:bg-[var(--surface-3)] transition-all duration-200"
-          >
-            <Globe size={13} className="text-[var(--text-muted)]" />
-            {language === 'en' ? 'EN' : 'JP'}
-          </button>
-          <button
-            onClick={() => dispatch(setTheme(isDark ? 'light' : 'dark'))}
-            className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--surface)]
-                       flex items-center justify-center text-[var(--text-muted)]
-                       hover:bg-[var(--surface-3)] hover:text-[var(--text)]
-                       transition-all duration-200"
-          >
-            {isDark ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Main content ── */}
-      <div className="flex-1 flex items-center justify-center px-4 pb-12">
-        <div className="w-full max-w-[420px] animate-fade-in">
-
-          {/* Decorative accent */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-            <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-20"
-                 style={{ background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)' }} />
-            <div className="absolute -bottom-20 -left-20 w-[300px] h-[300px] rounded-full opacity-15"
-                 style={{ background: 'radial-gradient(circle, var(--secondary) 0%, transparent 70%)' }} />
-          </div>
-
-          {/* Logo block */}
-          <div className="text-center mb-8 relative">
-            <div
-              className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl"
-              style={{
-                background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
-                boxShadow: 'var(--shadow-lg)',
-              }}
+        <div>
+          <label htmlFor="password" className="input-label">
+            {t('auth.password')}
+          </label>
+          <div className="relative">
+            <input
+              id="password"
+              type={showPass ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input pr-11"
+              placeholder="........"
+              required
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((value) => !value)}
+              className="absolute right-3 top-1/2 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+              style={{ transform: 'translateY(-50%)' }}
+              aria-label={showPass ? 'Hide password' : 'Show password'}
             >
-              🧠
-            </div>
-            <h1 className="text-[26px] font-extrabold text-[var(--text)] tracking-tight">
-              {t('auth.login_title')}
-            </h1>
-            <p className="text-[14px] text-[var(--text-muted)] mt-1.5">
-              {t('auth.login_subtitle')}
-            </p>
+              {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
-
-          {/* Form card */}
-          <div
-            className="relative rounded-2xl border border-[var(--border)] p-7"
-            style={{
-              background: 'var(--surface)',
-              boxShadow: 'var(--shadow-lg)',
-            }}
-          >
-            {/* Error message */}
-            {error && (
-              <div className="mb-5 alert alert-error" role="alert">
-                <span className="shrink-0 mt-0.5">⚠</span>
-                <p>{t('auth.invalid_creds')}</p>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-
-              {/* Email */}
-              <div>
-                <label htmlFor="email" className="input-label">
-                  {t('auth.email')}
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input"
-                  placeholder="you@example.com"
-                  required
-                  autoFocus
-                  autoComplete="email"
-                />
-              </div>
-
-              {/* Password */}
-              <div>
-                <label htmlFor="password" className="input-label">
-                  {t('auth.password')}
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPass ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input pr-11"
-                    placeholder="••••••••"
-                    required
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2
-                               text-[var(--text-muted)] hover:text-[var(--text)]
-                               transition-colors p-0.5 rounded"
-                    aria-label={showPass ? 'Hide password' : 'Show password'}
-                  >
-                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={status === 'loading'}
-                className="btn-primary w-full h-11 mt-1 justify-center text-[14px]"
-                style={{ borderRadius: '12px' }}
-              >
-                {status === 'loading' ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    {t('common.loading')}
-                  </>
-                ) : (
-                  t('btn.login')
-                )}
-              </button>
-            </form>
+          <div className="mt-2 flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-[12px] font-medium text-[var(--primary-deep)] transition-colors hover:text-[var(--accent)]"
+            >
+              {t('auth.forgot_password_link')}
+            </Link>
           </div>
-
-          {/* Footer note */}
-          <p className="text-center text-[12px] text-[var(--text-light)] mt-5">
-            Enterprise Meeting Management System
-          </p>
         </div>
-      </div>
-    </div>
+
+        <button
+          type="submit"
+          disabled={status === 'loading'}
+          className="btn-primary mt-1 h-11 w-full justify-center text-[14px]"
+          style={{ borderRadius: '12px' }}
+        >
+          {status === 'loading' ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              {t('common.loading')}
+            </>
+          ) : (
+            t('btn.login')
+          )}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
