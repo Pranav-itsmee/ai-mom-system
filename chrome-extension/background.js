@@ -13,6 +13,29 @@ const BADGE = {
   idle:      { text: '',   color: '#6b7280' },
 };
 
+async function clearSavedAuth() {
+  await chrome.storage.sync.remove(['extensionToken', 'jwtToken', 'user']);
+}
+
+async function notifyTokenExpired(message = 'Extension access expired — please set it up again.') {
+  await clearSavedAuth();
+  try {
+    await chrome.runtime.sendMessage({ type: 'TOKEN_EXPIRED', message });
+  } catch {}
+}
+
+async function getAuthConfig() {
+  const { apiUrl, extensionToken, jwtToken } = await chrome.storage.sync.get([
+    'apiUrl',
+    'extensionToken',
+    'jwtToken',
+  ]);
+  return {
+    apiUrl,
+    token: extensionToken || jwtToken || null,
+  };
+}
+
 function setStatus(msg) {
   currentStatus = msg;
   const b = BADGE[msg.status] ?? BADGE.idle;
@@ -63,9 +86,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'RECORDING_STARTED') {
     setStatus({ status: 'recording', title: msg.title });
 
-    chrome.storage.sync.get(['apiUrl', 'jwtToken']).then(({ apiUrl, jwtToken }) => {
-      if (!apiUrl || !jwtToken) {
-        setStatus({ status: 'error', message: 'Not configured - open the AI MOM popup and save your API URL + token' });
+    getAuthConfig().then(({ apiUrl, token }) => {
+      if (!apiUrl || !token) {
+        setStatus({ status: 'error', message: 'Not logged in — open the AI MOM extension and log in' });
+        notifyTokenExpired();
         return;
       }
 
@@ -73,7 +97,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${jwtToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           title: msg.title || 'Google Meet Recording',
@@ -82,6 +106,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }),
       })
         .then(async (res) => {
+          if (res.status === 401) { notifyTokenExpired(); throw new Error('Session expired'); }
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));
             throw new Error(body.error || `Server ${res.status}`);
@@ -106,9 +131,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'UPLOAD') {
     setStatus({ status: 'uploading', title: msg.title });
 
-    chrome.storage.sync.get(['apiUrl', 'jwtToken']).then(({ apiUrl, jwtToken }) => {
-      if (!apiUrl || !jwtToken) {
-        setStatus({ status: 'error', message: 'Not configured — open the AI MOM popup and save your API URL + token' });
+    getAuthConfig().then(({ apiUrl, token }) => {
+      if (!apiUrl || !token) {
+        setStatus({ status: 'error', message: 'Not configured — open the AI MOM popup and set up the extension' });
+        notifyTokenExpired();
         return;
       }
 
@@ -126,10 +152,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       fetch(`${apiUrl}/meetings/upload`, {
         method:  'POST',
-        headers: { Authorization: `Bearer ${jwtToken}` },
+        headers: { Authorization: `Bearer ${token}` },
         body:    form,
       })
         .then(async (res) => {
+          if (res.status === 401) {
+            notifyTokenExpired();
+            throw new Error('Extension access expired');
+          }
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));
             throw new Error(body.error || `Server ${res.status}`);
