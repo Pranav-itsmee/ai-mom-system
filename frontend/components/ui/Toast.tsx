@@ -19,9 +19,12 @@ export function Toast({ message, type = 'success', onClose }: ToastProps) {
 
   return (
     <div
-      className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all ${
-        type === 'success' ? 'bg-primary' : 'bg-accent'
+      className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] font-semibold animate-fade-in ${
+        type === 'success'
+          ? 'bg-[var(--primary)] text-[var(--text)]'
+          : 'bg-[var(--danger)] text-white'
       }`}
+      style={{ boxShadow: 'var(--shadow-lg)' }}
     >
       {type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />}
       <span>{message}</span>

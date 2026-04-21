@@ -1,4 +1,6 @@
-const fs = require('fs');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
 const puppeteer = require('puppeteer');
 const MeetingRecorder = require('./recorder');
 const ffmpegService = require('../services/ffmpeg.service');
@@ -85,19 +87,71 @@ const MEETING_END_PHRASES = [
   'Go back to home',
 ];
 
-// ─── Dedicated bot Chrome profile ────────────────────────────────────────────
-// ONE-TIME SETUP: run the command below, log into pranav.itsmee.official@gmail.com,
-// then close Chrome. The bot reuses the saved session automatically after that.
+// ─── Bot account pool ────────────────────────────────────────────────────────
 //
-//   "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir=C:\bot-chrome-profile
+// Each simultaneous meeting MUST use a separate Google account / Chrome profile.
+// Google Meet kicks a second session that uses the same account cookies.
 //
-const BOT_PROFILE_DIR = 'C:\\bot-chrome-profile';
+// ONE-TIME SETUP per bot account:
+//   Windows: chrome.exe --user-data-dir=C:\bot-profile-1
+//   Mac:     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+//              --user-data-dir=/Users/yourname/bot-profile-1
+//   → Log into bot1@yourcompany.com, then close Chrome.
+//   Repeat for bot2@yourcompany.com with bot-profile-2, etc.
+//
+// Set in .env  (comma-separated, one path per bot account):
+//   BOT_PROFILE_DIRS=/Users/pranav/bot-profile-1,/Users/pranav/bot-profile-2
+//
+// Fallback (single account, backward-compatible):
+//   BOT_PROFILE_DIR=/Users/pranav/bot-chrome-profile
+//
+function _resolveBotProfiles() {
+  // Multi-account: BOT_PROFILE_DIRS takes priority
+  if (process.env.BOT_PROFILE_DIRS) {
+    return process.env.BOT_PROFILE_DIRS
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+  // Single-account fallback
+  const single = process.env.BOT_PROFILE_DIR || (
+    process.platform === 'darwin'
+      ? path.join(os.homedir(), 'bot-chrome-profile')
+      : 'C:\\bot-chrome-profile'
+  );
+  return [single];
+}
+
+const BOT_PROFILES = _resolveBotProfiles();
+logger.info(`Bot profile pool: ${BOT_PROFILES.length} account(s) — ${BOT_PROFILES.join(', ')}`);
 
 // ─── MeetBot singleton ────────────────────────────────────────────────────────
 class MeetBot {
   constructor() {
-    /** @type {Map<number, { browser, page, recorder, audioPath }>} */
+    /** @type {Map<number, { browser, page, recorder, audioPath, sessionDir, profileDir }>} */
     this._active = new Map();
+    /** Profiles currently in use — prevents two meetings sharing the same Google account */
+    this._usedProfiles = new Set();
+  }
+
+  /** Pick the first profile not currently in use. Returns null if none available. */
+  _acquireProfile() {
+    for (const p of BOT_PROFILES) {
+      if (!this._usedProfiles.has(p)) {
+        this._usedProfiles.add(p);
+        return p;
+      }
+    }
+    return null; // all profiles busy
+  }
+
+  _releaseProfile(profileDir) {
+    if (profileDir) this._usedProfiles.delete(profileDir);
+  }
+
+  /** How many concurrent slots are still free */
+  availableSlots() {
+    return BOT_PROFILES.length - this._usedProfiles.size;
   }
 
   async joinMeeting(meeting) {
@@ -106,12 +160,25 @@ class MeetBot {
       return;
     }
 
-    logger.info(`Bot joining: "${meeting.title}" (id=${meeting.id})`);
+    // Acquire a free bot account profile
+    const profileDir = this._acquireProfile();
+    if (!profileDir) {
+      const msg =
+        `No free bot profile available (${BOT_PROFILES.length} account(s) configured, ` +
+        `all ${this._usedProfiles.size} in use). ` +
+        `Add more bot accounts via BOT_PROFILE_DIRS in .env to record simultaneous meetings.`;
+      logger.error(msg);
+      await meeting.update({ status: 'failed' }).catch(() => {});
+      return;
+    }
+
+    logger.info(`Bot joining: "${meeting.title}" (id=${meeting.id}) using profile: ${profileDir}`);
     this._active.set(meeting.id, null);
 
     let browser;
+    let sessionDir;
     try {
-      browser = await this._launchBrowser();
+      ({ browser, sessionDir } = await this._launchBrowser(meeting.id, profileDir));
       const page = await browser.newPage();
 
       await browser
@@ -120,7 +187,7 @@ class MeetBot {
           'camera', 'microphone', 'notifications',
         ]);
 
-      await this._ensureLoggedIn(page);
+      await this._ensureLoggedIn(page, profileDir);
 
       // Inject BEFORE the Meet page loads:
       //   1. Media lock  — hard-blocks mic/camera at the browser API level
@@ -152,7 +219,7 @@ class MeetBot {
       const recorder = new MeetingRecorder(page);
       const audioPath = await recorder.start(meeting.id);
 
-      const session = { browser, page, recorder, audioPath };
+      const session = { browser, page, recorder, audioPath, sessionDir, profileDir };
       this._active.set(meeting.id, session);
 
       logger.info(`Bot joined meeting ${meeting.id} — recording to ${audioPath}`);
@@ -162,17 +229,61 @@ class MeetBot {
       logger.error(`Bot failed to join meeting ${meeting.id}: ${err.message}`);
       await meeting.update({ status: 'failed' }).catch(() => {});
       if (browser) await browser.close().catch(() => {});
+      if (sessionDir) fs.rm(sessionDir, { recursive: true, force: true }, () => {});
+      this._releaseProfile(profileDir);
       this._active.delete(meeting.id);
     }
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
 
-  async _launchBrowser() {
-    return puppeteer.launch({
+  async _launchBrowser(meetingId, profileDir) {
+    // Each concurrent session copies its assigned bot account's profile into a
+    // fresh temp dir. This keeps the base profile clean and lets Chrome write
+    // session state without corrupting the master copy.
+    const sessionDir = path.join(os.tmpdir(), `chrome-profile-${meetingId}-${Date.now()}`);
+    try {
+      fs.mkdirSync(sessionDir, { recursive: true });
+
+      // Copy the 'Default' subfolder (cookies, localStorage, session tokens)
+      const defaultSrc = path.join(profileDir, 'Default');
+      const defaultDst = path.join(sessionDir, 'Default');
+      if (fs.existsSync(defaultSrc)) {
+        fs.cpSync(defaultSrc, defaultDst, { recursive: true, errorOnExist: false });
+      } else {
+        logger.warn(`Bot profile Default folder not found: ${defaultSrc} — bot may not be signed in`);
+      }
+
+      // CRITICAL on Windows: Chrome encrypts cookies with a key stored in
+      // 'Local State' (root of the profile dir, NOT inside Default/).
+      // Without this file the copied session cookies cannot be decrypted
+      // and Chrome treats every request as unauthenticated.
+      const localStateSrc = path.join(profileDir, 'Local State');
+      const localStateDst = path.join(sessionDir, 'Local State');
+      if (fs.existsSync(localStateSrc)) {
+        fs.copyFileSync(localStateSrc, localStateDst);
+        logger.debug(`Copied Local State from ${profileDir}`);
+      } else {
+        logger.warn(`Local State not found in ${profileDir} — cookie decryption may fail`);
+      }
+
+    } catch (copyErr) {
+      logger.warn(`Chrome profile copy failed (non-fatal): ${copyErr.message}`);
+    }
+
+    // Resolve Chrome executable: env var → OS default → Puppeteer bundled Chromium
+    const chromeExec = process.env.CHROME_EXECUTABLE_PATH || (
+      process.platform === 'darwin'
+        ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    );
+    // Fall back to Puppeteer's bundled Chromium if the path doesn't exist
+    const executablePath = fs.existsSync(chromeExec) ? chromeExec : undefined;
+
+    const browser = await puppeteer.launch({
       headless: 'new',   // set to 'new' to run invisibly in the background
-      executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      userDataDir: BOT_PROFILE_DIR,
+      ...(executablePath ? { executablePath } : {}),
+      userDataDir: sessionDir,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -191,22 +302,28 @@ class MeetBot {
       ],
       defaultViewport: { width: 1280, height: 720 },
     });
+    return { browser, sessionDir };
   }
 
-  async _ensureLoggedIn(page) {
+  async _ensureLoggedIn(page, profileDir) {
     await page.goto('https://accounts.google.com', {
       waitUntil: 'domcontentloaded',
       timeout: 30_000,
     });
     const url = page.url();
     if (url.includes('accounts.google.com/signin') || url.includes('/v3/signin')) {
+      const chromeExec = process.env.CHROME_EXECUTABLE_PATH ||
+        (process.platform === 'darwin'
+          ? '"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"'
+          : '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"');
       throw new Error(
-        'Bot Chrome profile is not signed into Google. ' +
-        'Run this command ONCE, log in to pranav.itsmee.official@gmail.com, then close Chrome:\n' +
-        '  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --user-data-dir=C:\\bot-chrome-profile'
+        `Bot Chrome profile is not signed into Google.\n` +
+        `Profile dir: ${profileDir}\n` +
+        `Run this command, sign in with your bot Google account, then close Chrome:\n` +
+        `  ${chromeExec} --user-data-dir=${profileDir}`
       );
     }
-    logger.info('Bot Chrome profile is signed in — proceeding');
+    logger.info(`Bot Chrome profile signed in (profile: ${profileDir})`);
   }
 
   async _disableInputDevices(page) {
@@ -537,6 +654,17 @@ class MeetBot {
       logger.error(`Browser close error: ${err.message}`)
     );
     this._active.delete(meeting.id);
+
+    // Release the bot account back into the pool for the next meeting
+    this._releaseProfile(session.profileDir);
+    logger.info(`Profile released: ${session.profileDir} (${this.availableSlots()}/${BOT_PROFILES.length} slots now free)`);
+
+    // Clean up the per-session Chrome profile directory
+    if (session.sessionDir) {
+      fs.rm(session.sessionDir, { recursive: true, force: true }, (err) => {
+        if (err) logger.warn(`Could not remove session profile dir: ${err.message}`);
+      });
+    }
 
     await meeting
       .update({ status: 'processing', ended_at: new Date(), duration_seconds: durationSeconds })

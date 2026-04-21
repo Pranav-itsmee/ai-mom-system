@@ -39,8 +39,8 @@ RUN npm ci --omit=dev
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 
-# Temp dir for WebM/MP3 files, logs dir for Winston
-RUN mkdir -p temp logs
+# Temp dir for WebM/MP3 files, logs dir, static avatar uploads
+RUN mkdir -p temp logs public/avatars
 
 EXPOSE 5000
 

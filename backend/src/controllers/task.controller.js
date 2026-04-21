@@ -1,13 +1,18 @@
 const { Task, MOM, User } = require('../models');
+const { createNotification } = require('../services/notification.service');
 
 async function listTasks(req, res, next) {
   try {
-    const { meetingId, status, priority, assignee, page = 1, limit = 50 } = req.query;
+    const { meetingId, status, priority, assignee, assignee_id, page = 1, limit = 50 } = req.query;
 
     const where = {};
     if (status) where.status = status;
     if (priority) where.priority = priority;
     if (assignee) where.assigned_to = assignee;
+    if (assignee_id) {
+      // 'me' is a convenience alias for the calling user's own id
+      where.assignee_id = assignee_id === 'me' ? req.user.id : parseInt(assignee_id, 10);
+    }
 
     // If filtering by meetingId, first get the mom_id
     if (meetingId) {
@@ -63,6 +68,18 @@ async function createTask(req, res, next) {
       status: status || 'pending',
     });
 
+    // Notify assigned user
+    if (assignee_id) {
+      const assigner = req.user?.name || 'Someone';
+      await createNotification(
+        assignee_id,
+        'task_assigned',
+        'New task assigned to you',
+        `${assigner} assigned you: "${title}"`,
+        { taskId: task.id }
+      );
+    }
+
     res.status(201).json(task);
   } catch (err) {
     next(err);
@@ -87,7 +104,20 @@ async function updateTask(req, res, next) {
     if (priority !== undefined) updates.priority = priority;
     if (status !== undefined) updates.status = status;
 
+    const prevAssigneeId = task.assignee_id;
     await task.update(updates);
+
+    // Notify if assignee changed
+    if (assignee_id !== undefined && assignee_id !== null && assignee_id !== prevAssigneeId) {
+      const assigner = req.user?.name || 'Someone';
+      await createNotification(
+        assignee_id,
+        'task_assigned',
+        'Task assigned to you',
+        `${assigner} assigned you: "${task.title}"`,
+        { taskId: task.id }
+      );
+    }
 
     const updated = await Task.findByPk(task.id, {
       include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],

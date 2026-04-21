@@ -22,6 +22,10 @@ const MeetingAttendee = sequelize.define(
     email: {
       type: DataTypes.STRING(150),
     },
+    status: {
+      type: DataTypes.ENUM('present', 'absent'),
+      defaultValue: 'present',
+    },
   },
   {
     tableName: 'meeting_attendees',

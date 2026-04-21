@@ -1,37 +1,72 @@
 const { Op } = require('sequelize');
-const { MOM, MOMKeyPoint, Meeting, Task, User } = require('../models');
+const {
+  MOM, MOMKeyPoint, MOMVersion, Meeting, Task, User, MeetingAttendee,
+} = require('../models');
 
-/** Fetch a MOM by its own primary key (used by the edit page). */
+// ── Full meeting include (organizer + attendees) ───────────────────────────
+function meetingInclude() {
+  return {
+    model: Meeting,
+    as:    'meeting',
+    attributes: [
+      'id', 'title', 'scheduled_at', 'status',
+      'location', 'meet_link', 'duration_seconds',
+      'organizer_id', 'organizer_name', 'organizer_email',
+    ],
+    include: [
+      { model: User, as: 'organizer', attributes: ['id', 'name', 'email'] },
+      {
+        model: MeetingAttendee,
+        as: 'attendees',
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+      },
+    ],
+  };
+}
+
+// ── Helper: meeting IDs accessible by a non-admin user ────────────────────
+async function accessibleMeetingIds(userId) {
+  const [attended, owned] = await Promise.all([
+    MeetingAttendee.findAll({ where: { user_id: userId }, attributes: ['meeting_id'] }),
+    Meeting.findAll({
+      where: { [Op.or]: [{ organizer_id: userId }, { created_by: userId }] },
+      attributes: ['id'],
+    }),
+  ]);
+  return [
+    ...new Set([
+      ...attended.map((a) => a.meeting_id),
+      ...owned.map((m) => m.id),
+    ]),
+  ];
+}
+
+/** GET /mom/id/:id — fetch by MOM primary key */
 async function getMOMById(req, res, next) {
   try {
     const mom = await MOM.findByPk(req.params.id, {
       include: [
-        { model: MOMKeyPoint, as: 'keyPoints', order: [['order_index', 'ASC']] },
-        { model: Task, as: 'tasks', order: [['created_at', 'ASC']] },
+        // separate:true avoids cartesian-product slowdown on multi-hasmany
+        { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
+        {
+          model: Task,
+          as: 'tasks',
+          separate: true,
+          order: [['created_at', 'ASC']],
+          include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+        },
         { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
-        { model: Meeting, attributes: ['id', 'title', 'scheduled_at', 'status'] },
+        meetingInclude(),
       ],
     });
     if (!mom) return res.status(404).json({ error: 'MOM not found' });
-    res.json(mom);
-  } catch (err) {
-    next(err);
-  }
-}
 
-async function getMOMByMeeting(req, res, next) {
-  try {
-    const mom = await MOM.findOne({
-      where: { meeting_id: req.params.meetingId },
-      include: [
-        { model: MOMKeyPoint, as: 'keyPoints', order: [['order_index', 'ASC']] },
-        { model: Task, as: 'tasks', order: [['created_at', 'ASC']] },
-        { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
-      ],
-    });
-
-    if (!mom) {
-      return res.status(404).json({ error: 'MOM not found for this meeting' });
+    // Access control for non-admins
+    if (req.user.role !== 'admin') {
+      const ids = await accessibleMeetingIds(req.user.id);
+      if (!ids.includes(mom.meeting_id)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     res.json(mom);
@@ -40,6 +75,82 @@ async function getMOMByMeeting(req, res, next) {
   }
 }
 
+/** GET /mom/:meetingId — fetch by meeting ID */
+async function getMOMByMeeting(req, res, next) {
+  try {
+    const mom = await MOM.findOne({
+      where: { meeting_id: req.params.meetingId },
+      include: [
+        { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
+        {
+          model: Task,
+          as: 'tasks',
+          separate: true,
+          order: [['created_at', 'ASC']],
+          include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+        },
+        { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
+        meetingInclude(),
+      ],
+    });
+
+    if (!mom) return res.status(404).json({ error: 'MOM not found for this meeting' });
+    res.json(mom);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /mom/list — user-scoped MOM list */
+async function listMOMs(req, res, next) {
+  try {
+    const archived = req.query.archived === 'true';
+    const where = { is_archived: archived };
+
+    if (req.user.role !== 'admin') {
+      const ids = await accessibleMeetingIds(req.user.id);
+      where.meeting_id = ids.length ? { [Op.in]: ids } : { [Op.in]: [-1] };
+    }
+
+    const moms = await MOM.findAll({
+      where,
+      include: [
+        {
+          model: Meeting,
+          as: 'meeting',
+          attributes: ['id', 'title', 'scheduled_at', 'status'],
+          include: [{ model: User, as: 'organizer', attributes: ['id', 'name'] }],
+        },
+      ],
+      order: [['created_at', 'DESC']],
+      limit: 200,
+    });
+
+    res.json({ total: moms.length, moms });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PATCH /mom/:id/archive — toggle archive state */
+async function archiveMOM(req, res, next) {
+  try {
+    const mom = await MOM.findByPk(req.params.id);
+    if (!mom) return res.status(404).json({ error: 'MOM not found' });
+
+    const nowArchived = !mom.is_archived;
+    await mom.update({
+      is_archived: nowArchived,
+      archived_at: nowArchived ? new Date() : null,
+    });
+
+    res.json({ ok: true, is_archived: nowArchived });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** PUT /mom/:id — update MOM, archiving the prior version first */
 async function updateMOM(req, res, next) {
   try {
     const { summary, key_points } = req.body;
@@ -48,41 +159,54 @@ async function updateMOM(req, res, next) {
       return res.status(400).json({ error: 'Provide summary or key_points to update' });
     }
 
-    const mom = await MOM.findByPk(req.params.id);
-    if (!mom) {
-      return res.status(404).json({ error: 'MOM not found' });
-    }
+    const mom = await MOM.findByPk(req.params.id, {
+      include: [{ model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] }],
+    });
+    if (!mom) return res.status(404).json({ error: 'MOM not found' });
+
+    // Archive current version before overwriting
+    await MOMVersion.create({
+      mom_id:          mom.id,
+      summary:         mom.summary,
+      key_points_json: JSON.stringify((mom.keyPoints ?? []).map((kp) => kp.point_text)),
+      archived_by:     req.user.id,
+      archived_at:     new Date(),
+    });
 
     const updates = {
       is_edited: true,
       edited_by: req.user.id,
       edited_at: new Date(),
     };
-    if (summary) updates.summary = summary;
+    if (summary !== undefined) updates.summary = summary;
 
     await mom.update(updates);
 
     if (Array.isArray(key_points)) {
-      // Replace all key points for this MOM
       await MOMKeyPoint.destroy({ where: { mom_id: mom.id } });
-
       if (key_points.length > 0) {
         await MOMKeyPoint.bulkCreate(
           key_points.map((text, idx) => ({
-            mom_id: mom.id,
-            point_text: text,
+            mom_id:      mom.id,
+            point_text:  text,
             order_index: idx,
           }))
         );
       }
     }
 
-    // Return updated MOM with key points
     const updated = await MOM.findByPk(mom.id, {
       include: [
-        { model: MOMKeyPoint, as: 'keyPoints', order: [['order_index', 'ASC']] },
-        { model: Task, as: 'tasks', order: [['created_at', 'ASC']] },
+        { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
+        {
+          model: Task,
+          as: 'tasks',
+          separate: true,
+          order: [['created_at', 'ASC']],
+          include: [{ model: User, as: 'assignee', attributes: ['id', 'name', 'email'] }],
+        },
         { model: User, as: 'editor', attributes: ['id', 'name', 'email'] },
+        meetingInclude(),
       ],
     });
 
@@ -92,18 +216,29 @@ async function updateMOM(req, res, next) {
   }
 }
 
+/** GET /mom/:id/versions — list archived versions */
+async function getMOMVersions(req, res, next) {
+  try {
+    const versions = await MOMVersion.findAll({
+      where: { mom_id: req.params.id },
+      include: [{ model: User, as: 'archivedByUser', attributes: ['id', 'name'] }],
+      order: [['archived_at', 'DESC']],
+    });
+    res.json({ versions });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function regenerateMOM(req, res, next) {
   try {
-    // req.params.id is the MOM id
     const mom = await MOM.findByPk(req.params.id, {
-      include: [{ model: Meeting }],
+      include: [{ model: Meeting, as: 'meeting' }],
     });
 
-    if (!mom) {
-      return res.status(404).json({ error: 'MOM not found' });
-    }
+    if (!mom) return res.status(404).json({ error: 'MOM not found' });
 
-    const meeting = mom.Meeting;
+    const meeting = mom.meeting;  // lowercase: alias is 'meeting'
 
     if (!meeting.audio_path) {
       return res.status(422).json({
@@ -118,27 +253,21 @@ async function regenerateMOM(req, res, next) {
       });
     }
 
-    // Set status to processing so the UI reflects in-progress state
     await meeting.update({ status: 'processing' });
 
-    // Run regeneration asynchronously — respond immediately so the request doesn't hang
     const claudeService = require('../services/claude.service');
     claudeService
       .generateMOM(meeting.id, meeting.audio_path)
-      .then(() => {
-        require('../utils/logger').info(`MOM regenerated for meeting ${meeting.id}`);
-      })
+      .then(() => require('../utils/logger').info(`MOM regenerated for meeting ${meeting.id}`))
       .catch((err) => {
-        require('../utils/logger').error(
-          `MOM regeneration failed for meeting ${meeting.id}: ${err.message}`
-        );
+        require('../utils/logger').error(`MOM regeneration failed for meeting ${meeting.id}: ${err.message}`);
         meeting.update({ status: 'failed' }).catch(() => {});
       });
 
     res.json({
       message: 'MOM regeneration started. The updated MOM will be available shortly.',
       meeting_id: meeting.id,
-      mom_id: mom.id,
+      mom_id:     mom.id,
     });
   } catch (err) {
     next(err);
@@ -153,16 +282,28 @@ async function searchMOMs(req, res, next) {
       return res.status(400).json({ error: 'Search query must be at least 2 characters' });
     }
 
+    const where = {
+      [Op.or]: [
+        { summary:        { [Op.like]: `%${q}%` } },
+        { raw_transcript: { [Op.like]: `%${q}%` } },
+      ],
+    };
+
+    if (req.user.role !== 'admin') {
+      const ids = await accessibleMeetingIds(req.user.id);
+      where.meeting_id = ids.length ? { [Op.in]: ids } : { [Op.in]: [-1] };
+    }
+
     const results = await MOM.findAll({
-      where: {
-        [Op.or]: [
-          { summary: { [Op.like]: `%${q}%` } },
-          { raw_transcript: { [Op.like]: `%${q}%` } },
-        ],
-      },
+      where,
       include: [
-        { model: Meeting, attributes: ['id', 'title', 'scheduled_at', 'status'] },
-        { model: MOMKeyPoint, as: 'keyPoints', order: [['order_index', 'ASC']] },
+        {
+          model: Meeting,
+          as: 'meeting',
+          attributes: ['id', 'title', 'scheduled_at', 'status'],
+          include: [{ model: User, as: 'organizer', attributes: ['id', 'name'] }],
+        },
+        { model: MOMKeyPoint, as: 'keyPoints', separate: true, order: [['order_index', 'ASC']] },
       ],
       order: [['created_at', 'DESC']],
       limit: 50,
@@ -174,4 +315,13 @@ async function searchMOMs(req, res, next) {
   }
 }
 
-module.exports = { getMOMById, getMOMByMeeting, updateMOM, regenerateMOM, searchMOMs };
+module.exports = {
+  getMOMById,
+  getMOMByMeeting,
+  listMOMs,
+  updateMOM,
+  getMOMVersions,
+  regenerateMOM,
+  searchMOMs,
+  archiveMOM,
+};

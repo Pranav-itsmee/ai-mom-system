@@ -39,11 +39,13 @@ function ProfileAvatar({
           className="w-full h-full rounded-full object-cover ring-4 ring-[var(--surface)] shadow-theme-sm" />
       ) : (
         <div
-          className="w-full h-full rounded-full bg-gradient-to-br from-primary/30 to-primary/60
-                     flex items-center justify-center ring-4 ring-[var(--surface)] shadow-theme-sm"
-          style={{ fontSize: size * 0.33 }}
+          className="w-full h-full rounded-full flex items-center justify-center ring-4 ring-[var(--surface)] shadow-theme-sm"
+          style={{
+            fontSize: size * 0.33,
+            background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
+          }}
         >
-          <span className="font-bold text-primary">{initials || '?'}</span>
+          <span className="font-bold text-[var(--text)]">{initials || '?'}</span>
         </div>
       )}
       {onUpload && (
@@ -60,13 +62,9 @@ function ProfileAvatar({
 
 function Alert({ type, msg }: { type: 'success' | 'error'; msg: string }) {
   return (
-    <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[13px] font-medium
-      ${type === 'success'
-        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300'
-        : 'bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'
-      }`}>
-      <AlertCircle size={15} className="shrink-0" />
-      {msg}
+    <div className={`alert ${type === 'success' ? 'alert-success' : 'alert-error'}`} role="alert">
+      <AlertCircle size={15} className="shrink-0 mt-0.5" />
+      <span>{msg}</span>
     </div>
   );
 }
@@ -105,8 +103,8 @@ function Section({ icon: Icon, title, children }: {
   return (
     <div className="card space-y-4">
       <div className="flex items-center gap-2 pb-3 border-b border-[var(--border)]">
-        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <Icon size={14} className="text-primary" />
+        <div className="w-7 h-7 rounded-lg bg-[var(--primary)]/25 flex items-center justify-center shrink-0">
+          <Icon size={14} className="text-[var(--primary-deep)]" />
         </div>
         <h2 className="text-[13px] font-semibold text-[var(--text)]">{title}</h2>
       </div>
@@ -229,7 +227,7 @@ export default function ProfilePage() {
 
         {/* Breadcrumb */}
         <div className="flex items-center gap-1 text-[12px] text-[var(--text-muted)] mb-5">
-          <Link href="/dashboard" className="hover:text-primary transition-colors">Home</Link>
+          <Link href="/dashboard" className="hover:text-[var(--primary-deep)] transition-colors">Home</Link>
           <ChevronRight size={12} />
           <span className="text-[var(--text)]">Profile</span>
         </div>
@@ -237,7 +235,7 @@ export default function ProfilePage() {
         {/* ── Profile header card ───────────────────────────────────────── */}
         <div className="card mb-5 overflow-hidden p-0">
           {/* Top accent strip */}
-          <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
+          <div className="h-24" style={{ background: 'linear-gradient(135deg, rgba(180,211,217,0.35) 0%, rgba(189,166,206,0.20) 60%, transparent 100%)' }} />
 
           <div className="px-6 pb-6">
             {/* Avatar row — overlaps strip */}
@@ -261,10 +259,10 @@ export default function ProfilePage() {
                   <h1 className="text-[18px] font-semibold text-[var(--text)]">{user?.name}</h1>
                   <p className="text-[13px] text-[var(--text-muted)]">{user?.email}</p>
                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold
                       ${user?.role === 'admin'
-                        ? 'bg-accent/15 text-accent border border-accent/20'
-                        : 'bg-primary/15 text-primary border border-primary/20'}`}>
+                        ? 'bg-[var(--accent)]/15 text-[var(--accent-deep)] border border-[var(--accent)]/25'
+                        : 'bg-[var(--primary)]/25 text-[var(--primary-deep)] border border-[var(--primary)]/40'}`}>
                       {user?.role === 'admin' ? 'Administrator' : 'Member'}
                     </span>
                     {memberSince && (
@@ -394,7 +392,7 @@ export default function ProfilePage() {
                       return (
                         <div key={lvl} className={`h-1 flex-1 rounded-full transition-colors
                           ${lvl <= strength
-                            ? strength >= 4 ? 'bg-emerald-500' : strength >= 3 ? 'bg-primary' : strength >= 2 ? 'bg-warning' : 'bg-accent'
+                            ? strength >= 4 ? 'bg-[var(--success)]' : strength >= 3 ? 'bg-[var(--primary-deep)]' : strength >= 2 ? 'bg-[var(--warning)]' : 'bg-[var(--danger)]'
                             : 'bg-[var(--border)]'}`}
                         />
                       );

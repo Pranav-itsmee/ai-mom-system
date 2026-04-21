@@ -432,7 +432,7 @@ JWT_EXPIRES_IN=7d
 
 # AI Keys
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx        # Whisper transcription
 
 # Google OAuth (see Step 5.3 below)
 GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
@@ -487,7 +487,11 @@ Skip this section if you don't use Google Calendar sync.
 6. Get Refresh Token using the OAuth Playground:
    - Go to https://developers.google.com/oauthplayground/
    - Click settings gear → check "Use your own OAuth credentials" → enter your Client ID and Secret
-   - In Step 1, enter scope: `https://www.googleapis.com/auth/calendar.readonly`
+   - In Step 1, enter scopes (space-separated):
+     ```
+     https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.other.readonly
+     ```
+     The `contacts.other.readonly` scope is required to resolve attendee display names via the People API.
    - Click Authorise → sign in with your Google account
    - In Step 2, click "Exchange authorization code for tokens"
    - Copy the **Refresh token** into `.env`
@@ -513,6 +517,44 @@ mysql -u root -p ai_mom_db < ~/ai-mom-system/seed_data.sql
 ```
 
 Enter your MySQL password when prompted.
+
+### 6.1b Run Schema Migrations
+
+After loading seed data, apply these column additions if upgrading from an older version:
+
+```sql
+-- Connect to DB
+mysql -u root -p ai_mom_db
+
+-- Organizer name/email stored directly on meetings (for non-system-user hosts)
+ALTER TABLE meetings
+  ADD COLUMN organizer_name  VARCHAR(255) NULL AFTER organizer_id,
+  ADD COLUMN organizer_email VARCHAR(255) NULL AFTER organizer_name;
+
+-- Attendee presence tracking
+ALTER TABLE meeting_attendees
+  ADD COLUMN status ENUM('present','absent') NOT NULL DEFAULT 'present';
+
+-- In-app notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id          INT NOT NULL AUTO_INCREMENT,
+  user_id     INT NOT NULL,
+  type        ENUM('task_assigned','task_deadline','meeting_starting') NOT NULL,
+  title       VARCHAR(255) NOT NULL,
+  message     TEXT NOT NULL,
+  task_id     INT NULL,
+  meeting_id  INT NULL,
+  is_read     TINYINT(1) NOT NULL DEFAULT 0,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_user_read (user_id, is_read),
+  CONSTRAINT fk_notif_user    FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+  CONSTRAINT fk_notif_task    FOREIGN KEY (task_id)    REFERENCES tasks(id)    ON DELETE SET NULL,
+  CONSTRAINT fk_notif_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+EXIT;
+```
 
 ### 6.2 Migrate Existing Data (If You Have Real Data on Your PC)
 
@@ -545,6 +587,8 @@ notifications
 tasks
 users
 ```
+
+> **Note:** `notifications` is created by the migration in Step 6.1b. If it's missing, run that migration.
 
 ---
 
@@ -806,7 +850,87 @@ Now access via: **http://moms.company.local**
 
 ---
 
-## 11. Troubleshooting
+## 11. Bot Account Pool — Simultaneous Meeting Recording
+
+> One Google account can only be in **one** Meet call at a time.
+> For N simultaneous meetings you need N bot Google accounts.
+
+### 11.1 Create Bot Google Accounts
+
+Create one Gmail/Google Workspace account per concurrent meeting slot:
+
+| Slot | Email | Profile Dir |
+|---|---|---|
+| 1 | `bot1@yourcompany.com` | `~/bot-profile-1` |
+| 2 | `bot2@yourcompany.com` | `~/bot-profile-2` |
+| 3 | `bot3@yourcompany.com` | `~/bot-profile-3` |
+
+Free Gmail accounts work fine (`aimom.bot1@gmail.com` etc.).
+
+### 11.2 Log Each Bot Account into Chrome (One-time per account)
+
+Run this once per bot account on the Mac Mini:
+
+```bash
+# Bot account 1
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir=/Users/$(whoami)/bot-profile-1 \
+  --no-first-run
+
+# Log into bot1@yourcompany.com in the browser that opens, then close it.
+```
+
+```bash
+# Bot account 2
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir=/Users/$(whoami)/bot-profile-2 \
+  --no-first-run
+
+# Log into bot2@yourcompany.com, then close it.
+```
+
+Repeat for each bot account.
+
+### 11.3 Configure the Pool in .env
+
+```env
+# backend/.env
+BOT_PROFILE_DIRS=/Users/pranav/bot-profile-1,/Users/pranav/bot-profile-2,/Users/pranav/bot-profile-3
+```
+
+### 11.4 How It Works
+
+When a meeting is about to start, the scheduler calls `joinMeeting()`:
+
+```
+Meeting A scheduled → acquireProfile() → picks bot-profile-1 (free) → Chrome #1 joins
+Meeting B scheduled → acquireProfile() → picks bot-profile-2 (free) → Chrome #2 joins
+Meeting C scheduled → acquireProfile() → bot-profile-3 (free)       → Chrome #3 joins
+Meeting D scheduled → acquireProfile() → ALL PROFILES BUSY          → status: failed
+```
+
+When a meeting ends, the profile is released back to the pool and available for the next meeting.
+
+### 11.5 Invite Bot Accounts to Meetings
+
+Each bot account must be **invited** (or the meeting must allow "anyone with the link"):
+
+- If your Google Meet meetings require sign-in: add each bot email as a guest in the Google Calendar event
+- If your meetings use "anyone with the link": no extra step needed
+
+### 11.6 Verify Pool is Loaded
+
+Check the backend logs on startup:
+
+```bash
+pm2 logs mom-backend | grep "profile pool"
+# Should print:
+# Bot profile pool: 2 account(s) — /Users/pranav/bot-profile-1, /Users/pranav/bot-profile-2
+```
+
+---
+
+## 12. Troubleshooting
 
 ### "Cannot connect to MySQL"
 

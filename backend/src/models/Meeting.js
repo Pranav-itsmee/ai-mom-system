@@ -36,6 +36,22 @@ const Meeting = sequelize.define(
     organizer_id: {
       type: DataTypes.INTEGER,
     },
+    organizer_name: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    organizer_email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    created_by: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    location: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+    },
     status: {
       type: DataTypes.ENUM('scheduled', 'recording', 'processing', 'completed', 'failed'),
       defaultValue: 'scheduled',

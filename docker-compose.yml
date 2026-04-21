@@ -35,6 +35,7 @@ services:
     volumes:
       - temp_files:/app/temp
       - backend_logs:/app/logs
+      - avatars:/app/public/avatars
     depends_on:
       db:
         condition: service_healthy
@@ -58,3 +59,4 @@ volumes:
   mysql_data:
   temp_files:
   backend_logs:
+  avatars:

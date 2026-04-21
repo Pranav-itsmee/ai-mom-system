@@ -32,7 +32,7 @@ export default function MeetingCard({ meeting }: { meeting: Meeting }) {
           {/* Title + meta */}
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-semibold text-[var(--text)]
-                          group-hover:text-primary transition-colors truncate">
+                          group-hover:text-[var(--primary-deep)] transition-colors truncate">
               {meeting.title}
             </p>
             <div className="flex items-center gap-3 mt-1 flex-wrap">

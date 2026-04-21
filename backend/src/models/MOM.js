@@ -25,6 +25,13 @@ const MOM = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
+    is_archived: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    archived_at: {
+      type: DataTypes.DATE,
+    },
     edited_by: {
       type: DataTypes.INTEGER,
     },

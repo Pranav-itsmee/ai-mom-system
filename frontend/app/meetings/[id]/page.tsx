@@ -69,7 +69,7 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   );
   if (error) return (
     <ProtectedLayout>
-      <p className="text-accent text-sm">{t('common.error')}: {error}</p>
+      <p className="text-[var(--danger)] text-sm">{t('common.error')}: {error}</p>
     </ProtectedLayout>
   );
   if (!currentMeeting) return (
@@ -85,7 +85,7 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
       <div className="max-w-5xl mx-auto">
         {/* Breadcrumb */}
         <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] mb-4">
-          <Link href="/meetings" className="hover:text-primary">{t('nav.meetings')}</Link>
+          <Link href="/dashboard" className="hover:text-[var(--primary-deep)]">{t('nav.dashboard')}</Link>
           <span>/</span>
           <span className="text-[var(--text)] truncate">{currentMeeting.title}</span>
         </div>
@@ -122,11 +122,17 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
             <div className="flex items-center gap-2 mt-3">
               <Users size={13} className="text-[var(--text-muted)]" />
               <div className="flex gap-1 flex-wrap">
-                {currentMeeting.attendees.map((a: any, i: number) => (
-                  <span key={i} className="text-xs bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 rounded-full">
-                    {a.name ?? a.email}
-                  </span>
-                ))}
+                {currentMeeting.attendees.map((a: any, i: number) => {
+                  const displayName = a.user?.name ?? a.name ?? a.user?.email ?? a.email ?? 'Unknown';
+                  return (
+                    <span key={i} className="text-xs bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-4 h-4 rounded-full bg-[var(--primary)]/20 text-[var(--primary-deep)] text-[9px] font-bold flex items-center justify-center shrink-0">
+                        {displayName.charAt(0).toUpperCase()}
+                      </span>
+                      {displayName}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}

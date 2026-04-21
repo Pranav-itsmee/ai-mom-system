@@ -3,54 +3,85 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import {
-  Calendar, FileText, CheckSquare, CalendarDays, Settings,
-} from 'lucide-react';
-import { useSelector } from 'react-redux';
+import { LayoutDashboard, FileText, CheckSquare, CalendarDays, Settings, X } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { closeMobileSidebar } from '@/store/slices/uiSlice';
 
 const NAV = [
-  { key: 'nav.dashboard', icon: Calendar,     href: '/dashboard' },
-  { key: 'nav.moms',      icon: FileText,     href: '/mom/search' },
-  { key: 'nav.tasks',     icon: CheckSquare,  href: '/tasks' },
-  { key: 'nav.calendar',  icon: CalendarDays, href: '/calendar' },
-  { key: 'nav.settings',  icon: Settings,     href: '/settings' },
+  { key: 'nav.dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { key: 'nav.moms',      icon: FileText,        href: '/mom/search' },
+  { key: 'nav.tasks',     icon: CheckSquare,     href: '/tasks'      },
+  { key: 'nav.calendar',  icon: CalendarDays,    href: '/calendar'   },
+  { key: 'nav.settings',  icon: Settings,        href: '/settings'   },
 ];
 
 export default function Sidebar() {
-  const { t }     = useTranslation();
-  const pathname  = usePathname();
-  const collapsed = useSelector((s: RootState) => s.ui.sidebarCollapsed);
+  const { t }      = useTranslation();
+  const pathname   = usePathname();
+  const dispatch   = useDispatch();
+  const collapsed  = useSelector((s: RootState) => s.ui.sidebarCollapsed);
+  const mobileOpen = useSelector((s: RootState) => s.ui.mobileSidebarOpen);
+
+  const isCollapsed = collapsed;   // desktop collapse state; on mobile always show full width
 
   return (
     <aside
-      className={`sidebar-transition no-scrollbar flex flex-col h-screen
-                  bg-[var(--surface)] border-r border-[var(--border)]
-                  ${collapsed ? 'w-[70px]' : 'w-[240px]'}`}
+      aria-label="Main navigation"
+      className={[
+        'sidebar-transition flex flex-col h-screen no-scrollbar',
+        'bg-[var(--surface)] border-r border-[var(--border)]',
+        // Desktop: respect collapsed state
+        // Mobile: always full 240px when drawer is open
+        'lg:relative',
+        isCollapsed ? 'lg:w-[72px]' : 'lg:w-[240px]',
+        'w-[240px]',            // mobile always full
+      ].join(' ')}
+      style={{ boxShadow: 'var(--shadow-md)' }}
     >
-      {/* ── Logo ── */}
-      <div className={`flex items-center h-16 border-b border-[var(--border)] shrink-0
-                       ${collapsed ? 'justify-center' : 'px-5 gap-3'}`}>
-        <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
-          <span className="text-white text-base">🧠</span>
+      {/* ── Logo + mobile close ── */}
+      <div
+        className={[
+          'flex items-center h-16 border-b border-[var(--border)] shrink-0',
+          isCollapsed ? 'lg:justify-center' : 'px-4 gap-3',
+          'px-4 gap-3',         // mobile always expanded
+        ].join(' ')}
+      >
+        {/* Logo mark */}
+        <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center shrink-0"
+             style={{ boxShadow: 'var(--shadow-sm)' }}>
+          <span className="text-[var(--text)] text-base select-none">🧠</span>
         </div>
-        {!collapsed && (
-          <div className="leading-tight">
-            <p className="text-[14px] font-bold text-[var(--text)]">AI MOM</p>
-            <p className="text-[11px] text-[var(--text-muted)]">Meeting System</p>
-          </div>
-        )}
+
+        {/* Title — hidden on desktop collapsed */}
+        <div className={[
+          'leading-tight flex-1 min-w-0',
+          isCollapsed ? 'lg:hidden' : '',
+        ].join(' ')}>
+          <p className="text-[14px] font-bold text-[var(--text)] truncate">AI MOM</p>
+          <p className="text-[11px] text-[var(--text-muted)] truncate">Meeting System</p>
+        </div>
+
+        {/* Mobile close button */}
+        <button
+          onClick={() => dispatch(closeMobileSidebar())}
+          className="lg:hidden p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-3)]
+                     hover:text-[var(--text)] transition-colors shrink-0"
+          aria-label="Close navigation"
+        >
+          <X size={16} />
+        </button>
       </div>
 
       {/* ── Nav ── */}
-      <nav className="flex-1 overflow-y-auto no-scrollbar py-5 px-3">
-        {/* MENU section label — exactly like SMS */}
-        {!collapsed && (
-          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.1em]
-                        text-[var(--text-muted)]">
-            Menu
-          </p>
-        )}
+      <nav className="flex-1 overflow-y-auto no-scrollbar py-4 px-3">
+        {/* Section label */}
+        <p className={[
+          'mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]',
+          isCollapsed ? 'lg:hidden' : '',
+        ].join(' ')}>
+          Menu
+        </p>
 
         <div className="space-y-0.5">
           {NAV.map(({ key, icon: Icon, href }) => {
@@ -59,22 +90,44 @@ export default function Sidebar() {
               <Link
                 key={href}
                 href={href}
-                title={collapsed ? t(key) : undefined}
-                className={`menu-item ${active ? 'menu-item-active' : 'menu-item-inactive'}
-                            ${collapsed ? 'justify-center px-0 py-2.5' : ''}`}
+                title={isCollapsed ? t(key) : undefined}
+                onClick={() => dispatch(closeMobileSidebar())}
+                className={[
+                  'menu-item relative',
+                  active ? 'menu-item-active' : 'menu-item-inactive',
+                  isCollapsed ? 'lg:justify-center lg:px-0' : '',
+                ].join(' ')}
+                aria-current={active ? 'page' : undefined}
               >
                 <Icon
                   size={17}
-                  className={`shrink-0 ${active ? 'text-primary' : 'text-[var(--gray-400)]'}`}
+                  className={[
+                    'shrink-0 transition-colors',
+                    active ? 'text-[var(--primary-deep)]' : 'text-[var(--text-muted)]',
+                  ].join(' ')}
                 />
-                {!collapsed && (
-                  <span>{t(key)}</span>
+                <span className={isCollapsed ? 'lg:hidden' : ''}>
+                  {t(key)}
+                </span>
+                {/* Active indicator dot — desktop collapsed */}
+                {active && isCollapsed && (
+                  <span className="hidden lg:block absolute right-1.5 w-1.5 h-1.5 rounded-full bg-[var(--primary-deep)]" />
                 )}
               </Link>
             );
           })}
         </div>
       </nav>
+
+      {/* ── Footer branding ── */}
+      <div className={[
+        'shrink-0 border-t border-[var(--border)] px-4 py-3',
+        isCollapsed ? 'lg:hidden' : '',
+      ].join(' ')}>
+        <p className="text-[10px] text-[var(--text-light)] text-center leading-tight">
+          Powered by Claude AI
+        </p>
+      </div>
     </aside>
   );
 }

@@ -32,9 +32,9 @@ export default function SearchBar() {
   return (
     <div className="relative w-full max-w-[400px]">
       <div className="flex items-center gap-2.5 h-10 bg-[var(--bg)] border border-[var(--border)]
-                      rounded-lg px-3.5 transition-all focus-within:border-primary"
+                      rounded-xl px-3.5 transition-all focus-within:border-[var(--primary-deep)] focus-within:shadow-[var(--shadow-focus)]"
            style={{ boxShadow: 'var(--shadow-xs)' }}>
-        <Search size={15} className="text-[var(--gray-400)] shrink-0" />
+        <Search size={15} className="text-[var(--text-muted)] shrink-0" />
         <input
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -46,7 +46,7 @@ export default function SearchBar() {
         />
         {query && (
           <button onClick={() => { setQuery(''); setResults([]); }}
-                  className="text-[var(--gray-400)] hover:text-[var(--gray-600)]">
+                  className="text-[var(--text-muted)] hover:text-[var(--text)]">
             <X size={13} />
           </button>
         )}
@@ -66,9 +66,8 @@ export default function SearchBar() {
             <button
               key={mom.id}
               onClick={() => { router.push(`/mom/${mom.id}`); setOpen(false); setQuery(''); }}
-              className="w-full text-left px-4 py-2.5 hover:bg-[var(--gray-50)]
-                         dark:hover:bg-white/5 transition-colors border-b border-[var(--border)]
-                         last:border-0"
+              className="w-full text-left px-4 py-2.5 hover:bg-[var(--surface-3)] border-b border-[var(--border)]
+                         last:border-0 transition-colors"
             >
               <p className="text-theme-sm font-medium text-[var(--text)] truncate">
                 {mom.meeting?.title || `MOM #${mom.id}`}

@@ -3,6 +3,7 @@ const app = require('./app');
 const { sequelize } = require('./config/db');
 const logger = require('./utils/logger');
 const { startScheduler, stopScheduler } = require('./services/scheduler.service');
+const { backfillAttendeeNames } = require('./services/calendar.service');
 
 const PORT = parseInt(process.env.PORT) || 5000;
 
@@ -14,6 +15,11 @@ async function startServer() {
     // In production, replace sync({alter}) with proper Sequelize migrations
     await sequelize.sync();
     logger.info('Database schema synced.');
+
+    // Backfill attendee names for any rows missing them (runs once, no-op when all filled)
+    backfillAttendeeNames()
+      .then(() => logger.info('Attendee name backfill complete.'))
+      .catch((err) => logger.warn('Attendee name backfill failed (non-fatal):', err.message));
 
     const server = app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);

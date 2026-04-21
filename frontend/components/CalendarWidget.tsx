@@ -39,7 +39,6 @@ export default function CalendarWidget({ events, onEventClick }: Props) {
       droppable={false}
       eventResizableFromStart={false}
       eventClick={onEventClick}
-      eventCursor="pointer"
       dayMaxEvents={3}
       eventDisplay="block"
       nowIndicator

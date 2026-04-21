@@ -2,11 +2,13 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 
-const authRoutes = require('./routes/auth.routes');
-const meetingRoutes = require('./routes/meeting.routes');
-const momRoutes = require('./routes/mom.routes');
-const taskRoutes = require('./routes/task.routes');
-const errorHandler = require('./middleware/errorHandler');
+const authRoutes         = require('./routes/auth.routes');
+const meetingRoutes      = require('./routes/meeting.routes');
+const momRoutes          = require('./routes/mom.routes');
+const taskRoutes         = require('./routes/task.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const userRoutes         = require('./routes/user.routes');
+const errorHandler       = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -26,10 +28,12 @@ app.use('/avatars', express.static(path.resolve(__dirname, '../public/avatars'))
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // API routes
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/meetings', meetingRoutes);
-app.use('/api/v1/mom', momRoutes);
-app.use('/api/v1/tasks', taskRoutes);
+app.use('/api/v1/auth',          authRoutes);
+app.use('/api/v1/meetings',      meetingRoutes);
+app.use('/api/v1/mom',           momRoutes);
+app.use('/api/v1/tasks',         taskRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/users',         userRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -36,7 +36,7 @@ export default function SettingsPage() {
         {/* ── Profile quick-link ── */}
         <Link
           href="/profile"
-          className="card flex items-center gap-4 hover:shadow-theme-sm hover:border-primary/30
+          className="card flex items-center gap-4 hover:shadow-theme-sm hover:border-[var(--primary)]
                      transition-all group no-underline"
         >
           {avatarSrc ? (
@@ -44,7 +44,7 @@ export default function SettingsPage() {
               className="w-12 h-12 rounded-full object-cover shrink-0" />
           ) : (
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/30 to-primary/60
-                            flex items-center justify-center shrink-0 text-primary font-bold text-[15px]">
+                            flex items-center justify-center shrink-0 text-[var(--primary-deep)] font-bold text-[15px]">
               {initials || <UserCircle size={22} />}
             </div>
           )}
@@ -53,7 +53,7 @@ export default function SettingsPage() {
             <p className="text-[12px] text-[var(--text-muted)] truncate">{user?.email}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[12px] text-primary font-medium group-hover:underline">
+            <span className="text-[12px] text-[var(--primary-deep)] font-semibold group-hover:underline">
               Edit Profile
             </span>
             <ChevronRight size={14} className="text-[var(--text-muted)]" />
@@ -72,8 +72,8 @@ export default function SettingsPage() {
                 className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border
                             text-[13px] font-medium transition-colors
                   ${theme === opt
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-primary'}`}
+                    ? 'border-[var(--primary-deep)] bg-[var(--primary)]/20 text-[var(--primary-deep)] font-semibold'
+                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]'}`}
               >
                 <input type="radio" name="theme" value={opt} checked={theme === opt}
                   onChange={() => dispatch(setTheme(opt))} className="sr-only" />
@@ -98,8 +98,8 @@ export default function SettingsPage() {
                 className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border
                             text-[13px] font-medium transition-colors
                   ${language === value
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-primary'}`}
+                    ? 'border-[var(--primary-deep)] bg-[var(--primary)]/20 text-[var(--primary-deep)] font-semibold'
+                    : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)]'}`}
               >
                 <input type="radio" name="language" value={value} checked={language === value}
                   onChange={() => dispatch(setLanguage(value))} className="sr-only" />

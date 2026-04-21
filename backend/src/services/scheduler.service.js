@@ -1,5 +1,6 @@
 const calendarService = require('./calendar.service');
 const logger = require('../utils/logger');
+const { sendDeadlineReminders } = require('./notification.service');
 
 let meetBot = null;
 function getBot() {
@@ -13,7 +14,9 @@ const POLL_INTERVAL_MS   = 30 * 1000;
 const JOIN_BEFORE_MS     = 2 * 60 * 1000;       // 120 s
 const WINDOW_HALF_MS     = 30 * 1000;            //  ±30 s tolerance
 
-let intervalHandle = null;
+let intervalHandle    = null;
+let reminderInterval  = null;
+const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day
 
 async function runTick() {
   logger.debug('Scheduler tick — syncing calendar…');
@@ -61,6 +64,11 @@ function startScheduler() {
   runTick();
   intervalHandle = setInterval(runTick, POLL_INTERVAL_MS);
   if (intervalHandle.unref) intervalHandle.unref();
+
+  // Run deadline reminders once at startup then once daily
+  sendDeadlineReminders();
+  reminderInterval = setInterval(sendDeadlineReminders, REMINDER_INTERVAL_MS);
+  if (reminderInterval.unref) reminderInterval.unref();
 }
 
 function stopScheduler() {
@@ -68,6 +76,10 @@ function stopScheduler() {
     clearInterval(intervalHandle);
     intervalHandle = null;
     logger.info('Calendar scheduler stopped');
+  }
+  if (reminderInterval) {
+    clearInterval(reminderInterval);
+    reminderInterval = null;
   }
 }
 

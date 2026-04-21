@@ -1,10 +1,11 @@
 'use client';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { AlignLeft, Bell, Sun, Moon } from 'lucide-react';
-import { toggleSidebar, setTheme, setLanguage } from '@/store/slices/uiSlice';
+import { Menu, Sun, Moon, Globe } from 'lucide-react';
+import { toggleSidebar, toggleMobileSidebar, setTheme, setLanguage } from '@/store/slices/uiSlice';
 import { RootState } from '@/store';
 import UserMenu from '@/components/ui/UserMenu';
+import NotificationDropdown from '@/components/ui/NotificationDropdown';
 
 export default function Topbar() {
   const dispatch = useDispatch();
@@ -12,63 +13,82 @@ export default function Topbar() {
   const language = useSelector((s: RootState) => s.ui.language);
   const isDark   = theme === 'dark';
 
+  function handleHamburger() {
+    // On mobile: toggle mobile drawer; on desktop: toggle collapse
+    // We dispatch both and CSS handles which is visible
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      dispatch(toggleMobileSidebar());
+    } else {
+      dispatch(toggleSidebar());
+    }
+  }
+
   return (
     <header
-      className="fixed top-0 right-0 left-0 z-40 flex items-center h-16 px-5
+      className="fixed top-0 right-0 left-0 z-40 flex items-center h-16 px-4 sm:px-5
                  bg-[var(--surface)] border-b border-[var(--border)]"
-      style={{ boxShadow: 'var(--shadow-xs)' }}
+      style={{ boxShadow: 'var(--shadow-xs)', height: 'var(--topbar-h)' }}
+      role="banner"
     >
-      {/* Hamburger */}
+      {/* Hamburger — mobile: opens drawer; desktop: collapses sidebar */}
       <button
-        onClick={() => dispatch(toggleSidebar())}
-        className="p-1.5 rounded-lg hover:bg-[var(--gray-100)] dark:hover:bg-white/5
-                   text-[var(--gray-500)] transition-colors"
+        onClick={handleHamburger}
+        className="p-2 rounded-lg hover:bg-[var(--surface-3)] text-[var(--text-muted)]
+                   hover:text-[var(--text)] transition-all duration-200 active:scale-95"
+        aria-label="Toggle navigation"
       >
-        <AlignLeft size={18} />
+        <Menu size={18} />
       </button>
+
+      {/* Brand name on mobile (when sidebar is closed) */}
+      <div className="ml-3 lg:hidden">
+        <span className="text-[14px] font-bold text-[var(--text)]">AI MOM</span>
+      </div>
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Right controls — matches SMS exactly */}
-      <div className="flex items-center gap-2">
+      {/* ── Right controls ── */}
+      <div className="flex items-center gap-1 sm:gap-1.5">
 
-        {/* Language select — native dropdown like SMS */}
-        <select
-          value={language}
-          onChange={(e) => dispatch(setLanguage(e.target.value as 'en' | 'ja'))}
-          className="h-9 px-3 pr-7 text-[13px] font-medium rounded-lg border border-[var(--border)]
-                     bg-[var(--surface)] text-[var(--text)] outline-none cursor-pointer
-                     hover:bg-[var(--gray-50)] dark:hover:bg-white/5 transition-colors
-                     appearance-none"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398A2B3' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'right 8px center',
-          }}
-        >
-          <option value="en">English</option>
-          <option value="ja">日本語</option>
-        </select>
+        {/* Language toggle */}
+        <div className="relative">
+          <button
+            onClick={() => dispatch(setLanguage(language === 'en' ? 'ja' : 'en'))}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[var(--border)]
+                       bg-[var(--surface)] text-[var(--text)] text-[13px] font-medium
+                       hover:bg-[var(--surface-3)] hover:border-[var(--border-2)]
+                       transition-all duration-200 active:scale-95"
+            title={language === 'en' ? 'Switch to 日本語' : 'Switch to English'}
+            aria-label="Toggle language"
+          >
+            <Globe size={14} className="text-[var(--text-muted)]" />
+            <span className="hidden sm:inline">{language === 'en' ? 'EN' : 'JP'}</span>
+          </button>
+        </div>
 
         {/* Theme toggle */}
         <button
           onClick={() => dispatch(setTheme(isDark ? 'light' : 'dark'))}
           className="flex items-center justify-center w-9 h-9 rounded-lg
-                     hover:bg-[var(--gray-100)] dark:hover:bg-white/5
-                     text-[var(--gray-500)] transition-colors"
+                     hover:bg-[var(--surface-3)] border border-transparent
+                     hover:border-[var(--border)]
+                     text-[var(--text-muted)] hover:text-[var(--text)]
+                     transition-all duration-200 active:scale-95"
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {isDark ? <Sun size={17} /> : <Moon size={17} />}
+          {isDark
+            ? <Sun  size={17} className="text-[var(--primary-deep)]" />
+            : <Moon size={17} />
+          }
         </button>
 
         {/* Notification bell */}
-        <button
-          className="flex items-center justify-center w-9 h-9 rounded-lg relative
-                     hover:bg-[var(--gray-100)] dark:hover:bg-white/5
-                     text-[var(--gray-500)] transition-colors"
-        >
-          <Bell size={17} />
-        </button>
+        <NotificationDropdown />
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-[var(--border)] mx-0.5" aria-hidden="true" />
 
         {/* User menu */}
         <UserMenu />
