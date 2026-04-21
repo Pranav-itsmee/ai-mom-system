@@ -5,7 +5,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 320px;
+      width: 300px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #0f172a;
       color: #f1f5f9;
@@ -18,16 +18,18 @@
       margin-bottom: 16px;
     }
     .header h2 { font-size: 14px; color: #38bdf8; font-weight: 700; }
-    label {
+
+    /* ── Logged-out: login form ── */
+    #login-view label {
       display: block;
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: #64748b;
-      margin: 14px 0 4px;
+      margin: 12px 0 4px;
     }
-    input {
+    #login-view input {
       width: 100%;
       background: #1e293b;
       border: 1px solid #334155;
@@ -38,21 +40,9 @@
       outline: none;
       transition: border-color 0.15s;
     }
-    input:focus { border-color: #38bdf8; }
-    .hint {
-      font-size: 10px;
-      color: #475569;
-      margin-top: 5px;
-      line-height: 1.5;
-    }
-    .hint code {
-      background: #1e293b;
-      border-radius: 3px;
-      padding: 1px 4px;
-      font-family: monospace;
-    }
-    button {
-      margin-top: 16px;
+    #login-view input:focus { border-color: #38bdf8; }
+    #login-btn {
+      margin-top: 14px;
       width: 100%;
       padding: 9px;
       background: #0ea5e9;
@@ -64,16 +54,60 @@
       cursor: pointer;
       transition: background 0.15s;
     }
-    button:hover { background: #0284c7; }
-    .saved {
+    #login-btn:hover  { background: #0284c7; }
+    #login-btn:disabled { background: #334155; cursor: not-allowed; }
+    .setup-hint {
+      margin-top: 10px;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #64748b;
       text-align: center;
-      font-size: 11px;
-      color: #34d399;
-      margin-top: 8px;
-      height: 16px;
     }
+    #login-err {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #f87171;
+      min-height: 16px;
+      text-align: center;
+    }
+
+    /* ── Logged-in view ── */
+    #main-view { display: none; }
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #1e293b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    .avatar {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: white; shrink: 0;
+    }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name  { font-size: 12px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-email { font-size: 10px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #logout-btn {
+      background: none;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 4px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    #logout-btn:hover { border-color: #f87171; color: #f87171; }
+
+    /* Status */
     .status {
-      margin-top: 14px;
       padding: 9px 12px;
       border-radius: 8px;
       font-size: 12px;
@@ -86,7 +120,59 @@
     .status.uploading { background: #431407; color: #fcd34d; }
     .status.done      { background: #052e16; color: #86efac; }
     .status.error     { background: #450a0a; color: #fca5a5; }
-    .divider { border: none; border-top: 1px solid #1e293b; margin: 14px 0 0; }
+
+    /* Server row */
+    .server-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .server-row span {
+      flex: 1;
+      font-size: 10px;
+      color: #475569;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #change-server-btn {
+      background: none;
+      border: none;
+      color: #38bdf8;
+      font-size: 10px;
+      cursor: pointer;
+      padding: 2px 4px;
+      white-space: nowrap;
+    }
+    #change-server-btn:hover { text-decoration: underline; }
+
+    /* Change server inline */
+    #server-edit { display: none; margin-top: 8px; }
+    #server-edit input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 7px;
+      color: #f1f5f9;
+      padding: 7px 10px;
+      font-size: 11px;
+      outline: none;
+    }
+    #server-edit input:focus { border-color: #38bdf8; }
+    #save-server-btn {
+      margin-top: 6px;
+      width: 100%;
+      padding: 7px;
+      background: #334155;
+      border: none;
+      border-radius: 7px;
+      color: #f1f5f9;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #save-server-btn:hover { background: #475569; }
   </style>
 </head>
 <body>
@@ -95,22 +181,44 @@
     <h2>AI MOM Recorder</h2>
   </div>
 
-  <label>Backend API URL</label>
-  <input id="apiUrl" placeholder="http://localhost:5000/api/v1" />
+  <!-- ── Login view (shown when not logged in) ── -->
+  <div id="login-view">
+    <label>Server URL</label>
+    <input id="apiUrl" placeholder="http://localhost:5000/api/v1" />
 
-  <label>JWT Token</label>
-  <input id="jwtToken" type="password" placeholder="Paste your login token…" />
-  <p class="hint">
-    Log into AI MOM → open DevTools (F12) → Application → Local Storage →
-    copy the value of <code>token</code>.
-  </p>
+    <label>Email</label>
+    <input id="email" type="email" placeholder="you@company.com" autocomplete="email" />
 
-  <button id="save">Save Settings</button>
-  <p class="saved" id="savedMsg"></p>
+    <label>Password</label>
+    <input id="password" type="password" placeholder="Your password" autocomplete="current-password" />
 
-  <hr class="divider" />
+    <button id="login-btn">Set Up Extension</button>
+    <p class="setup-hint">One-time setup. The extension keeps its own long-lived access token for this server.</p>
+    <p id="login-err"></p>
+  </div>
 
-  <div class="status idle" id="status">Idle — join a Google Meet to start recording</div>
+  <!-- ── Main view (shown when logged in) ── -->
+  <div id="main-view">
+    <div class="user-card">
+      <div class="avatar" id="avatar"></div>
+      <div class="user-info">
+        <div class="user-name"  id="user-name"></div>
+        <div class="user-email" id="user-email"></div>
+      </div>
+      <button id="logout-btn">Log out</button>
+    </div>
+
+    <div class="status idle" id="status">Idle — join a Google Meet to start</div>
+
+    <div class="server-row">
+      <span id="server-display"></span>
+      <button id="change-server-btn">Change server</button>
+    </div>
+    <div id="server-edit">
+      <input id="new-server-url" placeholder="http://192.168.1.100:5000/api/v1" />
+      <button id="save-server-btn">Save &amp; Re-login</button>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>
