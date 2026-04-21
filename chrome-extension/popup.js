@@ -1,6 +1,6 @@
 const STATUS_LABELS = {
-  idle:      'Idle — join a Google Meet to start',
-  recording: (t) => `🔴 Recording: "${t}"`,
+  idle:      'Idle — join a Google Meet, Teams or Zoom to start',
+  recording: (t, p) => `🔴 Recording${p ? ` [${p}]` : ''}: "${t}"`,
   uploading: (t) => `⬆️ Uploading "${t}" to AI pipeline…`,
   done:      (t) => `✅ MOM being generated for "${t}"`,
   error:     (m) => `❌ ${m || 'Upload failed'}`,
@@ -35,7 +35,7 @@ function renderStatus(s) {
   el.className = `status ${key}`;
   const label = STATUS_LABELS[key];
   el.textContent = typeof label === 'function'
-    ? label(s.title || s.message || '')
+    ? label(s.title || s.message || '', s.platform)
     : (label || 'Idle');
 }
 
@@ -51,7 +51,7 @@ async function boot() {
   const token = extensionToken || jwtToken;
 
   // Pre-fill API URL in login form
-  document.getElementById('apiUrl').value = apiUrl || 'http://localhost:5000/api/v1';
+  document.getElementById('apiUrl').value = apiUrl || 'https://mom.mosaique.work/api/v1';
 
   if (token && user) {
     showMain(user, apiUrl);
