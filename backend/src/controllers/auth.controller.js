@@ -1,8 +1,39 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt    = require('jsonwebtoken');
 const path   = require('path');
 const { google } = require('googleapis');
 const { User } = require('../models');
+
+function buildTokenPayload(user) {
+  return { id: user.id, email: user.email, role: user.role };
+}
+
+function issueAppToken(user) {
+  return jwt.sign(
+    buildTokenPayload(user),
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+}
+
+function buildExtensionFingerprint(user) {
+  return crypto
+    .createHash('sha256')
+    .update(`${user.id}:${user.password}:${process.env.JWT_SECRET}`)
+    .digest('hex');
+}
+
+function issueExtensionToken(user) {
+  return jwt.sign(
+    {
+      ...buildTokenPayload(user),
+      token_type: 'extension',
+      fp: buildExtensionFingerprint(user),
+    },
+    process.env.JWT_SECRET
+  );
+}
 
 async function register(req, res, next) {
   try {
@@ -24,11 +55,7 @@ async function register(req, res, next) {
       role: role === 'admin' ? 'admin' : 'member',
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    const token = issueAppToken(user);
 
     res.status(201).json({
       token,
@@ -53,13 +80,35 @@ async function login(req, res, next) {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    const token = issueAppToken(user);
 
     res.json({ token, user: _safeUser(user) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function extensionLogin(req, res, next) {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'email and password are required' });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = issueExtensionToken(user);
+
+    res.json({
+      token,
+      token_type: 'extension',
+      user: _safeUser(user),
+    });
   } catch (err) {
     next(err);
   }
@@ -208,4 +257,14 @@ function _safeUser(user) {
   };
 }
 
-module.exports = { register, login, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect };
+module.exports = {
+  register,
+  login,
+  extensionLogin,
+  getMe,
+  updateProfile,
+  connectGoogle,
+  googleCallback,
+  googleStatus,
+  googleDisconnect,
+};
