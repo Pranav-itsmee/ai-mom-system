@@ -43,20 +43,23 @@ const PLATFORM_CONFIG = {
 
   zoom: {
     label: 'Zoom',
+    // URL /wc/{id}/start (host) or /wc/{id}/join (participant) = actively in a meeting.
+    // DOM selectors are a fallback — Zoom's WebAssembly UI loads after document_idle.
     isInCall: () =>
+      /\/wc\/\d+\/(start|join)/.test(location.pathname) ||
       !!(document.querySelector('[aria-label="Leave"]') ||
-         document.querySelector('[class*="meeting-client"]') ||
-         document.querySelector('[class*="footer__btns-container"]') ||
-         document.querySelector('[class*="meeting-info"]')),
+         document.querySelector('[aria-label="End"]') ||
+         document.querySelector('[aria-label="End Meeting"]') ||
+         document.querySelector('[class*="footer__btns-container"]')),
     getTitle: () =>
+      // document.title is reliable: "Pranav's Zoom Meeting" etc.
+      document.title.replace(/^\s*Zoom\s*[-|]?\s*/i, '').trim() ||
       document.querySelector('[class*="meeting-topic"]')?.textContent?.trim() ||
-      document.querySelector('[class*="meeting-info__meeting-topic"]')?.textContent?.trim() ||
-      document.title.replace(/^Zoom\s*[-|]?\s*/i, '').trim() ||
       'Zoom Meeting',
     endPhrases: [
       'This meeting has been ended by the host', 'Meeting is over',
       'You have left the meeting', 'The meeting has ended',
-      'meeting has ended', 'left the meeting',
+      'meeting has ended', 'left the meeting', 'Thank you for joining',
     ],
   },
 };
