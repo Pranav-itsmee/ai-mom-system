@@ -23,6 +23,26 @@ const User = sequelize.define(
       type: DataTypes.STRING(255),
       allowNull: false,
     },
+    password_reset_token_hash: {
+      type: DataTypes.STRING(128),
+      allowNull: true,
+      defaultValue: null,
+    },
+    password_reset_expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
+    password_reset_used_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
+    password_changed_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
     role: {
       type: DataTypes.ENUM('admin', 'member'),
       defaultValue: 'member',

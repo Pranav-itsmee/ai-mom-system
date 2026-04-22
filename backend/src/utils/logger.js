@@ -7,8 +7,13 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
+// Console shows warn+ by default in dev (info+ in prod, or override with CONSOLE_LOG_LEVEL).
+// File logs always capture everything at debug+ so nothing is lost.
+const consoleLevel = process.env.CONSOLE_LOG_LEVEL
+  || (process.env.NODE_ENV === 'production' ? 'info' : 'warn');
+
 const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level: 'debug',
   format: winston.format.combine(
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
@@ -20,6 +25,7 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
+      level: consoleLevel,
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.timestamp({ format: 'HH:mm:ss' }),
@@ -34,6 +40,7 @@ const logger = winston.createLogger({
     }),
     new winston.transports.File({
       filename: path.join(logsDir, 'combined.log'),
+      level: 'debug',
     }),
   ],
 });
