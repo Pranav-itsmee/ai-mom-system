@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
@@ -10,7 +11,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import { login } from '@/store/slices/authSlice';
 import { RootState, AppDispatch } from '@/store';
 
-export default function LoginPage() {
+function LoginForm() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
@@ -119,5 +120,13 @@ export default function LoginPage() {
         </button>
       </form>
     </AuthShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

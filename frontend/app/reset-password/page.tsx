@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
@@ -9,7 +10,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import { api } from '@/services/api';
 import { getPasswordRuleStates, PASSWORD_MIN_LENGTH } from '@/lib/passwordPolicy';
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const { t } = useTranslation();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') ?? '';
@@ -248,5 +249,13 @@ export default function ResetPasswordPage() {
         </>
       )}
     </AuthShell>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
