@@ -1,6 +1,6 @@
-# AI MOM System — Mac Mini Server Deployment Guide
+# AI MOM System — Deployment Guide
 
-> Full step-by-step guide to migrate and run the AI MOM System on a Mac Mini server.
+> Full step-by-step guide to deploy the AI MOM System on a Mac Mini server (or any Linux/Mac machine).
 > Two paths: **Docker** (easier, recommended) and **Manual** (more control).
 
 ---
@@ -34,6 +34,7 @@ Gather these **before** touching the Mac Mini:
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com |
 | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
 | Google `CLIENT_ID` and `CLIENT_SECRET` | Google Cloud Console (see Step 5.3) |
+| SMTP credentials | Gmail App Password (see Step 5.4) |
 | Mac Mini admin password | Set during macOS setup |
 | USB drive or same Wi-Fi network | For transferring files |
 
@@ -202,18 +203,13 @@ docker compose logs -f
 
 Press **Ctrl+C** to stop watching (services keep running).
 
-### A.4 Load Seed Data into Docker MySQL
-
-```bash
-# Wait 30 seconds for MySQL to fully initialize, then:
-docker compose exec db mysql -u root -p"YOUR_DB_PASSWORD" ai_mom_db < ~/ai-mom-system/seed_data.sql
-```
-
-Or use the Node seed script:
+### A.4 Seed the Database
 
 ```bash
 docker compose exec backend node scripts/seed.js
 ```
+
+This creates the database, all tables, and the 3 default user accounts.
 
 ### A.5 Verify Everything is Running
 
@@ -231,7 +227,7 @@ frontend    Up
 
 Open browser: **http://localhost:3000**
 
-Login: `developer@mosaique.link` / `Admin@1234`
+Login: `developer@mosaique.link` / `Admin@123`
 
 ### A.6 Useful Docker Commands
 
@@ -302,21 +298,7 @@ During `mysql_secure_installation`:
 - Disallow remote root login: **Y**
 - Remove test database: **Y**
 
-### B.3 Create the Database
-
-```bash
-mysql -u root -p
-```
-
-```sql
-CREATE DATABASE ai_mom_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'mom_user'@'localhost' IDENTIFIED BY 'StrongPassword123!';
-GRANT ALL PRIVILEGES ON ai_mom_db.* TO 'mom_user'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-### B.4 Install FFmpeg
+### B.3 Install FFmpeg
 
 FFmpeg converts uploaded `.webm` recordings to `.mp3` for Whisper transcription.
 
@@ -334,14 +316,14 @@ which ffprobe    # e.g. /opt/homebrew/bin/ffprobe
 
 **Save these paths** — you'll need them in `.env`.
 
-### B.5 Install PM2 (Process Manager)
+### B.4 Install PM2 (Process Manager)
 
 ```bash
 npm install -g pm2
 pm2 --version
 ```
 
-### B.6 Install Project Dependencies
+### B.5 Install Project Dependencies
 
 ```bash
 cd ~/ai-mom-system/backend
@@ -376,9 +358,11 @@ DB_NAME=ai_mom_db
 DB_USER=root
 DB_PASSWORD=YOUR_MYSQL_ROOT_PASSWORD
 
-# JWT — generate: openssl rand -hex 32
+# JWT — generate with: openssl rand -hex 32
 JWT_SECRET=PASTE_YOUR_64_CHAR_RANDOM_STRING_HERE
 JWT_EXPIRES_IN=7d
+PASSWORD_MIN_LENGTH=10
+PASSWORD_RESET_TOKEN_TTL_MINUTES=15
 
 # AI Keys
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
@@ -393,8 +377,17 @@ GOOGLE_REDIRECT_URI=http://localhost:5000/api/v1/auth/google/callback
 FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
 FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 
-# Temp directory for uploaded recordings (auto-deleted after MOM generation)
+# Temp directory — .webm deleted after processing, .mp3 kept 7 days
 TEMP_DIR=./temp
+
+# SMTP — for forgot-password emails and MOM sharing
+# Gmail: create an App Password at https://myaccount.google.com/apppasswords
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM="AI MOM System" <you@gmail.com>
 ```
 
 Save: **Ctrl+X → Y → Enter**
@@ -437,7 +430,28 @@ Each user connects their own Google account — no shared bot token required.
 
 Users connect their own accounts at: **Settings → Connect Google Calendar** in the app.
 
-### 5.4 Generate a JWT Secret
+### 5.4 SMTP Setup (for Forgot Password + MOM sharing emails)
+
+The system uses SMTP to send password reset links and MOM share emails.
+
+**Gmail (recommended):**
+
+1. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+2. Select app: **Mail**, device: **Other** → name it "AI MOM"
+3. Copy the generated 16-character code into `SMTP_PASS`
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=you@gmail.com
+SMTP_PASS=xxxx xxxx xxxx xxxx
+SMTP_FROM="AI MOM System" <you@gmail.com>
+```
+
+If SMTP is not configured, the system falls back to logging reset links to the console — useful for local development.
+
+### 5.5 Generate a JWT Secret
 
 ```bash
 openssl rand -hex 32
@@ -451,7 +465,7 @@ Copy the output into `JWT_SECRET` in `.env`.
 
 ### 6.1 Run the Seed Script
 
-Creates all tables and loads sample data (admin + member accounts, example meetings and MOMs).
+Creates the database if it doesn't exist, syncs all tables, then loads default users and sample data.
 
 **Docker:**
 ```bash
@@ -464,52 +478,13 @@ cd ~/ai-mom-system/backend
 node scripts/seed.js
 ```
 
-Or load the raw SQL:
-```bash
-mysql -u root -p ai_mom_db < ~/ai-mom-system/seed_data.sql
-```
+Default accounts created:
 
-### 6.1b Run Schema Migrations (if upgrading from an older version)
-
-```sql
--- Connect to DB
-mysql -u root -p ai_mom_db
-
--- Organizer name/email on meetings
-ALTER TABLE meetings
-  ADD COLUMN IF NOT EXISTS organizer_name  VARCHAR(255) NULL AFTER organizer_id,
-  ADD COLUMN IF NOT EXISTS organizer_email VARCHAR(255) NULL AFTER organizer_name,
-  ADD COLUMN IF NOT EXISTS location        VARCHAR(500) NULL AFTER meet_link,
-  ADD COLUMN IF NOT EXISTS created_by      INT          NULL AFTER organizer_id;
-
--- Attendee presence tracking
-ALTER TABLE meeting_attendees
-  ADD COLUMN IF NOT EXISTS status ENUM('present','absent') NOT NULL DEFAULT 'present';
-
--- Per-user Google Calendar token
-ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS google_refresh_token TEXT NULL;
-
--- In-app notifications
-CREATE TABLE IF NOT EXISTS notifications (
-  id          INT NOT NULL AUTO_INCREMENT,
-  user_id     INT NOT NULL,
-  type        ENUM('task_assigned','task_deadline','meeting_starting') NOT NULL,
-  title       VARCHAR(255) NOT NULL,
-  message     TEXT NOT NULL,
-  task_id     INT NULL,
-  meeting_id  INT NULL,
-  is_read     TINYINT(1) NOT NULL DEFAULT 0,
-  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_user_read (user_id, is_read),
-  CONSTRAINT fk_notif_user    FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
-  CONSTRAINT fk_notif_task    FOREIGN KEY (task_id)    REFERENCES tasks(id)    ON DELETE SET NULL,
-  CONSTRAINT fk_notif_meeting FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-EXIT;
-```
+| Role | Email | Password |
+|---|---|---|
+| Admin | developer@mosaique.link | Admin@123 |
+| Member | pranavswordsman5335@gmail.com | Pranav@2003 |
+| Member | bala@mosaique.link | Bala@123 |
 
 ### 6.2 Migrate Existing Data (If You Have Real Data on Your PC)
 
@@ -534,6 +509,7 @@ mysql -u root -p -e "USE ai_mom_db; SHOW TABLES;"
 Expected:
 ```
 meeting_attendees
+meeting_project_links
 meetings
 mom_key_points
 moms
@@ -603,7 +579,7 @@ Open Chrome on the Mac Mini:
 - Frontend: **http://localhost:3000**
 - Backend health: **http://localhost:5000/health**
 
-Login: `developer@mosaique.link` / `Admin@1234`
+Login: `developer@mosaique.link` / `Admin@123`
 
 ---
 
@@ -649,7 +625,6 @@ pm2 restart mom-backend
 System Settings → Network → Firewall → Options → allow Terminal, or:
 
 ```bash
-/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/node
 ```
 
@@ -713,7 +688,7 @@ Replace the `http { server { ... } }` block with:
 http {
     server {
         listen 80;
-        server_name 192.168.1.100 moms.company.local;
+        server_name 192.168.1.100 mom.company.local;
 
         location / {
             proxy_pass http://127.0.0.1:3000;
@@ -745,19 +720,19 @@ Access at: **http://192.168.1.100** (no port needed)
 
 **Mac/Linux** — add to `/etc/hosts`:
 ```
-192.168.1.100  moms.company.local
+192.168.1.100  mom.company.local
 ```
 
 **Windows** — add to `C:\Windows\System32\drivers\etc\hosts`:
 ```
-192.168.1.100  moms.company.local
+192.168.1.100  mom.company.local
 ```
 
 ---
 
 ## 11. Chrome Extension — Install & Configure on Any System
 
-The AI MOM Chrome Extension runs on each user's machine (not on the server). It auto-detects Google Meet sessions, records the audio, and uploads it to the backend when the meeting ends.
+The AI MOM Chrome Extension runs on each user's machine. It auto-detects Google Meet, Microsoft Teams, and Zoom web sessions, records the audio, and uploads it to the backend when the meeting ends.
 
 ### 11.1 Share the Extension Folder
 
@@ -777,33 +752,50 @@ The extension lives at `chrome-extension/` inside this project. No build step is
 4. Select the `chrome-extension/` folder (the one containing `manifest.json`)
 5. The **AI MOM** icon appears in the toolbar. If not visible, click the puzzle-piece icon → pin AI MOM.
 
-### 11.3 Configure the API URL
+### 11.3 Log In via the Extension (One-Time Setup)
 
-By default the extension points to `http://localhost:5000`. When using a shared server, update it:
+The extension has a built-in login form — no manual token copying needed.
 
-1. Open `chrome-extension/background.js`
-2. Find:
-   ```js
-   const apiUrl = 'http://localhost:5000/api/v1';
-   ```
-3. Change to your server IP:
-   ```js
-   const apiUrl = 'http://192.168.1.100:5000/api/v1';
-   ```
-4. Save the file
-5. Go to `chrome://extensions` → click **Reload** (↺) on the AI MOM card
+1. Click the AI MOM extension icon
+2. The **Server URL** is pre-filled with `https://mom.mosaique.work/api/v1`
+   - Change it if your server is at a different address
+3. Enter your email and password → click **Log In**
+4. The extension saves the session and will only ask you to log in again if the session expires
 
-### 11.4 Log In via the Extension
+### 11.4 Supported Platforms
 
-1. Open the AI MOM frontend in Chrome (e.g. `http://192.168.1.100:3000`)
-2. Log in with your account
-3. Open DevTools (`F12`) → **Application** → **Local Storage** → select the frontend URL
-4. Find the key `token` → copy the value
-5. Click the AI MOM extension icon → paste the token → **Save**
+| Platform | URL pattern | Trigger |
+|---|---|---|
+| Google Meet | `meet.google.com/*` | Meeting controls appear in DOM |
+| Microsoft Teams | `teams.microsoft.com/*`, `teams.live.com/*` | Hangup button or meeting URL pattern |
+| Zoom (web client) | `app.zoom.us/wc/*` | URL path `/wc/{id}/start` or `/wc/{id}/join` |
 
-Each user uses their own token so recordings are attributed to the correct account.
+> **Zoom note:** Only the web client (`app.zoom.us`) is supported. Users must join via browser, not the desktop app — click "Join from browser" on the Zoom join page.
 
-### 11.5 Add Google Redirect URI for Server IP
+### 11.5 How Recording Works (End-to-End)
+
+```
+User joins a meeting in Chrome (Meet / Teams / Zoom)
+  → content.js detects meeting start (platform-specific DOM / URL check)
+  → hook.js captures audio via RTCPeerConnection + getUserMedia hooks
+  → Meeting ends → background.js uploads to POST /meetings/upload
+  → Server: FFmpeg (WebM → MP3) → Whisper (transcription) → Claude (MOM JSON)
+  → MOM stored in MySQL
+  → Notification sent to attendees
+  → Visible at: http://<SERVER>:3000/meetings
+```
+
+Extension badge states:
+
+| Badge | Meaning |
+|---|---|
+| *(blank)* | Idle |
+| ● (red) | Recording |
+| ↑ (amber) | Uploading to server |
+| ✓ (green) | Done — MOM being generated |
+| ! (red) | Error — check service worker console |
+
+### 11.6 Add Google Redirect URI for Server IP
 
 When users connect Google Calendar from a server URL (not localhost):
 
@@ -820,38 +812,21 @@ GOOGLE_REDIRECT_URI=http://192.168.1.100:5000/api/v1/auth/google/callback
 FRONTEND_URL=http://192.168.1.100:3000
 ```
 
-### 11.6 How Recording Works (End-to-End)
-
-```
-User joins Google Meet in Chrome
-  → Extension detects meeting start (MutationObserver on page DOM)
-  → MediaRecorder captures tab audio + video (WebM)
-  → Meeting ends → background.js service worker uploads to POST /meetings/upload
-  → Server: FFmpeg (WebM → MP3) → Whisper (transcription) → Claude (MOM JSON)
-  → MOM stored in MySQL
-  → Visible at: http://<SERVER_IP>:3000/meetings
-```
-
-Extension badge states:
-| Badge | Meaning |
-|---|---|
-| *(blank)* | Idle |
-| **REC** (red) | Recording |
-| **↑** | Uploading to server |
-| **✓** (green) | Done — MOM being generated |
-| **✗** (red) | Error (check service worker console) |
-
 ### 11.7 Verify the Extension is Working
 
-1. Join a test Google Meet call
-2. Badge shows **REC**
+1. Join a test Google Meet / Teams / Zoom call in Chrome
+2. Badge shows **●** (red) — recording started
 3. Leave the meeting
-4. Badge shows **↑** → **✓**
-5. Open AI MOM frontend → **Meetings** → the meeting appears with status `processing` then `completed`
+4. Badge shows **↑** then **✓**
+5. Open AI MOM frontend → **Meetings** → meeting appears with status `processing` then `completed`
 6. Click the meeting → **View MOM**
 
-**Debugging:** `chrome://extensions` → AI MOM → **Service worker** link → check Console for errors.
-Most common issue: API URL still pointing to `localhost` instead of the server IP.
+**Debugging:** `chrome://extensions` → AI MOM → **Service worker** link → Console tab → check for errors.
+
+Most common issues:
+- Server URL is wrong in the extension popup
+- Session expired — click the extension icon and log in again
+- Zoom: user joined via desktop app instead of browser
 
 ---
 
@@ -901,11 +876,22 @@ pm2 restart mom-frontend
 ### Docker: "permission denied" or "port already in use"
 
 ```bash
-lsof -i :3000
-lsof -i :5000
-
 docker compose down
 docker compose up -d
+```
+
+### SMTP / forgot-password emails not sending
+
+```bash
+# Check env vars are set:
+grep SMTP ~/ai-mom-system/backend/.env
+
+# If using Gmail, verify the App Password (not your regular Gmail password)
+# App Passwords: https://myaccount.google.com/apppasswords
+
+# Test: trigger a password reset from the frontend /forgot-password page
+# If SMTP_HOST is not set, the reset link is printed to the backend console instead
+pm2 logs mom-backend | grep "Password reset"
 ```
 
 ### Check all backend errors at once
@@ -916,13 +902,31 @@ pm2 logs mom-backend --lines 100
 
 # Docker
 docker compose logs --tail=100 backend
+
+# Log files (always written regardless of console level)
+cat ~/ai-mom-system/backend/logs/error.log
+cat ~/ai-mom-system/backend/logs/combined.log
+```
+
+### Enable verbose logging (SQL queries etc.)
+
+```bash
+# Temporarily show all log levels in console:
+CONSOLE_LOG_LEVEL=debug pm2 restart mom-backend
+
+# Show every SQL query:
+SEQUELIZE_DEBUG=true pm2 restart mom-backend
 ```
 
 ### Reset the database completely
 
 ```bash
-mysql -u root -p -e "DROP DATABASE ai_mom_db; CREATE DATABASE ai_mom_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-cd ~/ai-mom-system/backend && node scripts/seed.js
+cd ~/ai-mom-system/backend
+node scripts/seed.js
+# The seed script drops and recreates all data.
+# To also drop/recreate the DB:
+mysql -u root -p -e "DROP DATABASE ai_mom_db;"
+node scripts/seed.js
 ```
 
 ### Google OAuth "redirect_uri_mismatch" (Error 400)
@@ -934,6 +938,12 @@ The redirect URI in your `.env` must exactly match what is registered in Google 
 3. Ensure the value from `.env` appears under **Authorised redirect URIs**
 4. Save and wait 1–2 minutes for Google to propagate the change
 
+### Extension not recording on Teams or Zoom
+
+- **Teams**: Make sure you are in an active call (hangup button visible). Teams lobby/waiting rooms are not detected.
+- **Zoom**: Must join via browser (`app.zoom.us`), not the desktop app. On the Zoom join page, click **"Join from your browser"** instead of opening the app.
+- After any extension update, go to `chrome://extensions` → click **Reload** on AI MOM.
+
 ---
 
 ## Quick Reference
@@ -943,48 +953,53 @@ The redirect URI in your `.env` must exactly match what is registered in Google 
 | Frontend | http://192.168.1.100:3000 |
 | Backend API | http://192.168.1.100:5000/api/v1 |
 | Backend health check | http://192.168.1.100:5000/health |
-| Admin login | developer@mosaique.link / Admin@1234 |
-| Member login | pranavswordsman5335@gmail.com / Pranav@1234 |
+| Admin login | developer@mosaique.link / Admin@123 |
+| Member (Pranav) | pranavswordsman5335@gmail.com / Pranav@2003 |
+| Member (Bala) | bala@mosaique.link / Bala@123 |
 | View PM2 logs | `pm2 logs` |
 | Restart all PM2 | `pm2 restart all` |
 | Docker status | `docker compose ps` |
 | Docker logs | `docker compose logs -f` |
 | MySQL CLI | `mysql -u root -p ai_mom_db` |
+| Seed database | `cd backend && node scripts/seed.js` |
+| Backend console logs | `backend/logs/combined.log` |
 | Extension install | `chrome://extensions` → Developer mode → Load unpacked |
-| Extension API URL | Edit `chrome-extension/background.js` → `apiUrl` |
-| Seed database | `node backend/scripts/seed.js` |
-| Clear meetings | `node backend/scripts/clear-meetings.js` |
+| Extension default URL | `https://mom.mosaique.work/api/v1` |
 
 ---
 
-## File Structure on Mac Mini (after setup)
+## File Structure on Server (after setup)
 
 ```
 ~/ai-mom-system/
 ├── backend/
-│   ├── .env                    ← your secrets (never commit this)
+│   ├── .env                    ← your secrets (never commit)
 │   ├── src/
-│   │   ├── controllers/
+│   │   ├── controllers/        auth, meeting, mom, momShare, task, notification, user
 │   │   ├── services/           calendar, claude, ffmpeg, notification, scheduler
-│   │   ├── models/
+│   │   ├── models/             Meeting, MOM, Task, User, MeetingAttendee, Notification
+│   │   ├── utils/              logger, meetingAccess, passwordPolicy
 │   │   └── routes/
+│   ├── logs/
+│   │   ├── error.log           ← errors only
+│   │   └── combined.log        ← full debug log
 │   ├── scripts/
-│   │   ├── seed.js             ← creates tables + sample data
-│   │   └── clear-meetings.js   ← resets meetings, keeps users
-│   └── temp/                   ← uploaded recordings (auto-deleted after processing)
+│   │   └── seed.js             ← creates DB + tables + 3 default users
+│   └── temp/                   ← .webm deleted after processing; .mp3 kept 7 days
 ├── frontend/
-│   ├── .env.local              ← API URL
+│   ├── .env.local              ← API URL (never commit)
 │   └── .next/                  ← production build
 ├── chrome-extension/           ← install this on each user's Chrome
-│   ├── manifest.json
-│   ├── background.js           ← update apiUrl here for LAN deployment
-│   ├── content.js
-│   ├── hook.js
-│   └── popup.html/js
+│   ├── manifest.json           ← MV3, matches Meet + Teams + Zoom
+│   ├── background.js           ← auth, upload, badge
+│   ├── content.js              ← platform-aware meeting detector
+│   ├── hook.js                 ← WebRTC audio capture (works on all platforms)
+│   └── popup.html/js           ← login form + status
 ├── docker-compose.yml
+├── README.md
 └── MAC_MINI_DEPLOY.md          ← this file
 ```
 
 ---
 
-*AI MOM System v1.0.0 — Pranav*
+*AI MOM System v1.1.0 — Pranav*
