@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'next/navigation';
@@ -15,7 +15,7 @@ interface SystemUser { id: number; name: string; email: string; role: string; cr
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:5000';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { t }    = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const params   = useSearchParams();
@@ -30,7 +30,6 @@ export default function SettingsPage() {
   const [disconnecting,  setDisconnecting]  = useState(false);
   const [gcalMsg,        setGcalMsg]        = useState<string | null>(null);
 
-  // User management (admin only)
   const [users,       setUsers]       = useState<SystemUser[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
   const [addForm,     setAddForm]     = useState({ name: '', email: '', password: '', role: 'member' });
@@ -122,7 +121,6 @@ export default function SettingsPage() {
           {t('settings.title')}
         </h1>
 
-        {/* ── Profile quick-link ── */}
         <Link
           href="/profile"
           className="card flex items-center gap-4 hover:shadow-theme-sm hover:border-[var(--primary)]
@@ -149,7 +147,6 @@ export default function SettingsPage() {
           </div>
         </Link>
 
-        {/* ── Theme ── */}
         <section className="card space-y-3">
           <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
             {t('settings.theme')}
@@ -172,7 +169,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* ── Language ── */}
         <section className="card space-y-3">
           <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
             {t('settings.language')}
@@ -198,7 +194,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* ── Google Calendar ── */}
         <section className="card space-y-3">
           <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
             Google Calendar
@@ -257,7 +252,6 @@ export default function SettingsPage() {
           )}
         </section>
 
-        {/* ── User Management (admin only) ── */}
         {user?.role === 'admin' && (
           <section className="card space-y-4">
             <div className="flex items-center justify-between">
@@ -274,7 +268,6 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {/* User list */}
             <div className="divide-y divide-[var(--border)]">
               {users.map((u) => (
                 <div key={u.id} className="flex items-center gap-3 py-2.5">
@@ -315,7 +308,6 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Add User form (inline slide-down) */}
             {showAddUser && (
               <form onSubmit={handleAddUser}
                 className="border border-[var(--border)] rounded-xl p-4 space-y-3 bg-[var(--bg)]">
@@ -399,5 +391,25 @@ export default function SettingsPage() {
 
       </div>
     </ProtectedLayout>
+  );
+}
+
+function SettingsLoading() {
+  return (
+    <ProtectedLayout>
+      <div className="max-w-xl mx-auto space-y-5 animate-pulse">
+        <div className="h-6 bg-[var(--border)] rounded w-32" />
+        <div className="h-24 bg-[var(--border)] rounded" />
+        <div className="h-32 bg-[var(--border)] rounded" />
+      </div>
+    </ProtectedLayout>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsLoading />}>
+      <SettingsContent />
+    </Suspense>
   );
 }

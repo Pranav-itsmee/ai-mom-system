@@ -16,8 +16,8 @@ services:
       DB_PASSWORD: root
       MYSQL_HOST: shared-mysql
       MYSQL_PORT: "3306"
-      FRONTEND_URL: https://mom.mosaique.work
-      GOOGLE_REDIRECT_URI: https://mom.mosaique.work/auth/google/callback
+      FRONTEND_URL: https://mom.mosaique.link
+      GOOGLE_REDIRECT_URI: https://mom.mosaique.link/auth/google/callback
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
@@ -29,16 +29,25 @@ services:
       - avatars:/app/public/avatars
       - bot_profile:/app/bot-chrome-profile
       - backend_temp:/app/backend/temp
+    ports:
+      - "8011:5000"
+    networks:
+      dev-net:
+        aliases:
+          - mom-backend
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
+        BACKEND_URL: http://mom-backend:5000
+    environment:
+      BACKEND_URL: http://mom-backend:5000
     restart: unless-stopped
     ports:
-      - "8007:3000"
+      - "8012:3000"
     networks:
       - dev-net
     deploy:
