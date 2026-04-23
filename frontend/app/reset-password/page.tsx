@@ -1,7 +1,7 @@
 'use client';
 
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +9,25 @@ import AuthShell from '@/components/auth/AuthShell';
 import { api } from '@/services/api';
 import { getPasswordRuleStates, PASSWORD_MIN_LENGTH } from '@/lib/passwordPolicy';
 
+export const dynamic = 'force-dynamic';
+
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<ResetPasswordLoading />}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function ResetPasswordLoading() {
+  return (
+    <AuthShell title="Loading..." subtitle="">
+      <div className="h-96 animate-pulse rounded-lg bg-gray-200" />
+    </AuthShell>
+  );
+}
+
+function Content() {
   const { t } = useTranslation();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') ?? '';

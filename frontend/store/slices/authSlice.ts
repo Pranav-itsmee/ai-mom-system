@@ -38,7 +38,7 @@ export const login = createAsyncThunk(
       const res = await api.post('/auth/login', { email, password });
       return res.data;
     } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Invalid credentials');
+      return rejectWithValue(err.response?.data?.error || 'Invalid credentials');
     }
   }
 );
