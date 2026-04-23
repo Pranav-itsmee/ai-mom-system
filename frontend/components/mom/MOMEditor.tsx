@@ -92,7 +92,7 @@ export default function MOMEditor({ momId }: Props) {
         status: (a.status === 'absent' ? 'absent' : 'present') as 'present' | 'absent',
       }));
       setAttendeesList(mapped);
-      originalAttendeesRef.current = mapped.map(({ name, email }) => ({ name, email }));
+      originalAttendeesRef.current = mapped.map(({ name, email }: { name: string; email: string }) => ({ name, email }));
     }
   }, [currentMOM, momId]);
 
