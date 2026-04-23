@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronRight, UserCircle, Globe, CheckCircle, XCircle, UserPlus, Trash2, X } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
@@ -18,7 +17,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'htt
 function SettingsContent() {
   const { t }    = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
-  const params   = useSearchParams();
 
   const theme    = useSelector((s: RootState) => s.ui.theme);
   const language = useSelector((s: RootState) => s.ui.language);
@@ -41,12 +39,7 @@ function SettingsContent() {
     api.get('/auth/google/status')
       .then((r) => setGcalConnected(r.data.connected))
       .catch(() => setGcalConnected(false));
-
-    const g = params.get('google');
-    if (g === 'connected')         setGcalMsg('Google Calendar connected successfully!');
-    if (g === 'error')             setGcalMsg('Google authorization failed. Please try again.');
-    if (g === 'no_refresh_token')  setGcalMsg('No refresh token received. Try revoking access at myaccount.google.com and reconnecting.');
-  }, [params]);
+  }, []);
 
   useEffect(() => {
     if (user?.role === 'admin') {

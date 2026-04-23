@@ -1,21 +1,19 @@
 'use client';
 
-import { Suspense } from 'react';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import AuthShell from '@/components/auth/AuthShell';
 import { login } from '@/store/slices/authSlice';
 import { RootState, AppDispatch } from '@/store';
 
-function LoginForm() {
+export default function LoginPage() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { token, status, error } = useSelector((state: RootState) => state.auth);
 
   const [email, setEmail] = useState('');
@@ -26,24 +24,16 @@ function LoginForm() {
     if (token) router.replace('/dashboard');
   }, [token, router]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     dispatch(login({ email, password }));
   }
-
-  const resetSuccess = searchParams.get('reset') === 'success';
 
   return (
     <AuthShell
       title={t('auth.login_title')}
       subtitle={t('auth.login_subtitle')}
     >
-      {resetSuccess && (
-        <div className="mb-5 alert alert-success" role="status">
-          <p>{t('auth.login_reset_success')}</p>
-        </div>
-      )}
-
       {error && (
         <div className="mb-5 alert alert-error" role="alert">
           <p>{error || t('auth.invalid_creds')}</p>
@@ -120,13 +110,5 @@ function LoginForm() {
         </button>
       </form>
     </AuthShell>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
   );
 }
