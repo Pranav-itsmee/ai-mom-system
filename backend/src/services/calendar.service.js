@@ -265,10 +265,8 @@ async function syncAllUserCalendars() {
     try {
       const authClient = _getUserAuthClient(user.google_refresh_token);
       const results    = await syncMeetingsForAuth(authClient, user.id);
-      if (results.length > 0) {
-        logger.info(`Calendar sync [${user.email}]: ${results.filter(r => r.created).length} new, ${results.filter(r => !r.created).length} updated`);
-      } else {
-        logger.debug(`Calendar sync [${user.email}]: no upcoming meetings`);
+      if (results.some(r => r.created)) {
+        logger.info(`Calendar sync [${user.email}]: ${results.filter(r => r.created).length} new meeting(s)`);
       }
       allResults.push(...results);
     } catch (err) {

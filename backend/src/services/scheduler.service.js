@@ -39,13 +39,11 @@ let intervalHandle   = null;
 let reminderInterval = null;
 
 async function runTick() {
-  logger.debug('Scheduler tick — syncing calendar for all connected users…');
-
   try {
     const synced = await calendarService.syncMeetings();
     if (synced.length > 0) {
       const created = synced.filter((r) => r.created).length;
-      logger.info(`Calendar sync complete: ${created} new, ${synced.length - created} updated across all users`);
+      logger.info(`Calendar sync: ${created} new, ${synced.length - created} updated`);
     }
   } catch (err) {
     logger.error(`Calendar sync failed: ${err.message}`);
