@@ -1,23 +1,4 @@
-version: '3.8'
-
 services:
-
-  # ── MySQL ────────────────────────────────────────────────────────────────────
-  db:
-    image: mysql:8.0
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: ai_mom_db
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    ports:
-      - "3307:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   # ── Local Whisper (faster-whisper transcription sidecar) ─────────────────────
   whisper:
@@ -27,8 +8,8 @@ services:
       args:
         WHISPER_MODEL: tiny
     restart: unless-stopped
-    ports:
-      - "9000:9000"
+    networks:
+      - dev-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 10s
@@ -37,30 +18,42 @@ services:
       start_period: 60s
 
   # ── Backend (Express + Puppeteer + FFmpeg) ───────────────────────────────────
-  backend:
+  app:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: mom_app
     restart: unless-stopped
-    ports:
-      - "5000:5000"
     env_file:
       - ./backend/.env
     environment:
-      # Override DB_HOST so backend connects to the db container, not localhost
-      DB_HOST: db
-      # Override Windows paths from .env — Docker container uses Linux FFmpeg
+      DB_HOST: shared-mysql
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: root
+      MYSQL_HOST: shared-mysql
+      MYSQL_PORT: "3306"
+      FRONTEND_URL: https://mom.mosaique.work
+      GOOGLE_REDIRECT_URI: https://mom.mosaique.work/auth/google/callback
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
-      # Local Whisper sidecar — replaces OpenAI Whisper API
-      WHISPER_URL: http://whisper:9000
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      BOT_PROFILE_DIR: /app/bot-chrome-profile
+      WHISPER_URL: http://mom_whisper:9000
+    ports:
+      - "8011:5000"
+    networks:
+      dev-net:
+        aliases:
+          - mom-backend
     volumes:
       - temp_files:/app/temp
       - backend_logs:/app/logs
       - avatars:/app/public/avatars
+      - bot_profile:/app/bot-chrome-profile
+      - backend_temp:/app/backend/temp
     depends_on:
-      db:
-        condition: service_healthy
       whisper:
         condition: service_healthy
 
@@ -70,17 +63,31 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Browser talks to backend via the host machine, not the Docker network
-        NEXT_PUBLIC_API_URL: http://localhost:5000/api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
+        BACKEND_URL: http://mom-backend:5000
+    environment:
+      BACKEND_URL: http://mom-backend:5000
+    container_name: mom_frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8012:3000"
+    networks:
+      - dev-net
     depends_on:
-      - backend
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  mysql_data:
-  temp_files:
+  bot_profile:
+  backend_temp:
   backend_logs:
   avatars:
+  temp_files:
+
+networks:
+  dev-net:
+    external: true
