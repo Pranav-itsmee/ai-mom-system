@@ -32,7 +32,7 @@ async function loadMOM(momId) {
 
 // ── Build HTML email body ─────────────────────────────────────────────────────
 
-function buildEmailHTML(mom, frontendUrl) {
+function buildEmailHTML(mom, frontendUrl, sender) {
   const m = mom.meeting;
   const dateStr = m ? new Date(m.scheduled_at).toLocaleString() : 'N/A';
   const location = m?.location || (m?.meet_link ? 'Google Meet' : 'N/A');
@@ -86,7 +86,9 @@ function buildEmailHTML(mom, frontendUrl) {
       View Full MOM
     </a>
   </div>
-  <p style="font-size:11px;color:#aaa;margin-top:24px;text-align:center">Sent via AI MOM System</p>
+  <p style="font-size:11px;color:#aaa;margin-top:24px;text-align:center">
+    Shared by <strong>${sender?.name ?? 'a team member'}</strong>${sender?.email ? ` (${sender.email})` : ''} via AI MOM System
+  </p>
 </body></html>`;
 }
 
@@ -101,6 +103,8 @@ async function shareByEmail(req, res, next) {
 
     const mom = await loadMOM(req.params.id);
     if (!mom) return res.status(404).json({ error: 'MOM not found' });
+
+    const sender = await User.findByPk(req.user.id, { attributes: ['id', 'name', 'email'] });
 
     // Build transporter from env (SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM)
     // Falls back to a test-mode SMTP that logs to console if env vars are missing
@@ -124,11 +128,13 @@ async function shareByEmail(req, res, next) {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const html = buildEmailHTML(mom, frontendUrl);
+    const html = buildEmailHTML(mom, frontendUrl, sender);
     const subject = `MOM: ${mom.meeting?.title ?? 'Meeting Minutes'}`;
+    const serviceAddr = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@aimom.local';
 
     const info = await transporter.sendMail({
-      from:    process.env.SMTP_FROM || '"AI MOM System" <noreply@aimom.local>',
+      from:    `"${sender?.name ?? 'AI MOM'} via AI MOM" <${serviceAddr}>`,
+      replyTo: sender ? `"${sender.name}" <${sender.email}>` : undefined,
       to:      emails.join(', '),
       subject,
       html,
@@ -153,6 +159,8 @@ async function shareByGoogleChat(req, res, next) {
 
     const mom = await loadMOM(req.params.id);
     if (!mom) return res.status(404).json({ error: 'MOM not found' });
+
+    const sender = await User.findByPk(req.user.id, { attributes: ['id', 'name', 'email'] });
 
     const m = mom.meeting;
     const dateStr  = m ? new Date(m.scheduled_at).toLocaleString() : '';
@@ -191,6 +199,13 @@ async function shareByGoogleChat(req, res, next) {
                     text: 'View Full MOM',
                     onClick: { openLink: { url: link } },
                   }],
+                },
+              }],
+            },
+            {
+              widgets: [{
+                textParagraph: {
+                  text: `<font color="#888888"><i>Shared by ${sender?.name ?? 'a team member'}</i></font>`,
                 },
               }],
             },
