@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
       args:
         WHISPER_MODEL: tiny
+    container_name: mom_whisper
     restart: unless-stopped
     networks:
       - dev-net
