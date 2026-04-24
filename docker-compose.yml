@@ -19,6 +19,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Local Whisper (faster-whisper transcription sidecar) ─────────────────────
+  whisper:
+    build:
+      context: ./whisper-service
+      dockerfile: Dockerfile
+      args:
+        WHISPER_MODEL: base
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
   # ── Backend (Express + Puppeteer + FFmpeg) ───────────────────────────────────
   backend:
     build:
@@ -32,12 +49,19 @@ services:
     environment:
       # Override DB_HOST so backend connects to the db container, not localhost
       DB_HOST: db
+      # Override Windows paths from .env — Docker container uses Linux FFmpeg
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      FFPROBE_PATH: /usr/bin/ffprobe
+      # Local Whisper sidecar — replaces OpenAI Whisper API
+      WHISPER_URL: http://whisper:9000
     volumes:
       - temp_files:/app/temp
       - backend_logs:/app/logs
       - avatars:/app/public/avatars
     depends_on:
       db:
+        condition: service_healthy
+      whisper:
         condition: service_healthy
 
   # ── Frontend (Next.js) ───────────────────────────────────────────────────────
