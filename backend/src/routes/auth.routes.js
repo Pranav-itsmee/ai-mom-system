@@ -2,7 +2,7 @@ const router  = require('express').Router();
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
-const { register, login, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect } = require('../controllers/auth.controller');
+const { register, login, extensionLogin, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect } = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
 // ── Avatar upload (multer) ────────────────────────────────────────────────────
@@ -27,9 +27,10 @@ const upload = multer({
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-router.post('/register', register);
-router.post('/login',    login);
-router.get('/me',        authenticate, getMe);
+router.post('/register',         register);
+router.post('/login',            login);
+router.post('/extension-login',  extensionLogin);
+router.get('/me',                authenticate, getMe);
 router.put('/profile',   authenticate, upload.single('avatar'), updateProfile);
 
 // ── Google Calendar OAuth ─────────────────────────────────────────────────────

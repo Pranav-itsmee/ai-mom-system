@@ -1,8 +1,53 @@
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
 const path   = require('path');
 const { google } = require('googleapis');
 const { User } = require('../models');
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function buildTokenPayload(user) {
+  return { id: user.id, email: user.email, role: user.role };
+}
+
+function buildExtensionFingerprint(user) {
+  return crypto
+    .createHash('sha256')
+    .update(`${user.id}:${user.password}:${process.env.JWT_SECRET}`)
+    .digest('hex');
+}
+
+function issueExtensionToken(user) {
+  return jwt.sign(
+    { ...buildTokenPayload(user), token_type: 'extension', fp: buildExtensionFingerprint(user) },
+    process.env.JWT_SECRET
+  );
+}
+
+async function extensionLogin(req, res, next) {
+  try {
+    const email    = normalizeEmail(req.body.email);
+    const { password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'email and password are required' });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = issueExtensionToken(user);
+    res.json({ token, token_type: 'extension', user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function register(req, res, next) {
   try {
@@ -208,4 +253,4 @@ function _safeUser(user) {
   };
 }
 
-module.exports = { register, login, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect };
+module.exports = { register, login, extensionLogin, getMe, updateProfile, connectGoogle, googleCallback, googleStatus, googleDisconnect };

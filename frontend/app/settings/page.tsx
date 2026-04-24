@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +16,7 @@ interface SystemUser { id: number; name: string; email: string; role: string; cr
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') ?? 'http://localhost:5000';
 
-export default function SettingsPage() {
+function SettingsPageInner() {
   const { t }    = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const params   = useSearchParams();
@@ -399,5 +400,13 @@ export default function SettingsPage() {
 
       </div>
     </ProtectedLayout>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsPageInner />
+    </Suspense>
   );
 }

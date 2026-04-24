@@ -92,7 +92,7 @@ export default function MOMEditor({ momId }: Props) {
         status: (a.status === 'absent' ? 'absent' : 'present') as 'present' | 'absent',
       }));
       setAttendeesList(mapped);
-      originalAttendeesRef.current = mapped.map(({ name, email }) => ({ name, email }));
+      originalAttendeesRef.current = mapped.map(({ name, email }: { name: string; email: string }) => ({ name, email }));
     }
   }, [currentMOM, momId]);
 
@@ -103,11 +103,11 @@ export default function MOMEditor({ momId }: Props) {
   const matchCount = useMemo(() => {
     if (!findText.trim()) return 0;
     const re = new RegExp(escapeRegex(findText), caseSensitive ? 'g' : 'gi');
-    let n = [...(summary.matchAll(re))].length;
-    keyPoints.forEach((kp) => { n += [...kp.matchAll(re)].length; });
+    let n = (summary.match(re) ?? []).length;
+    keyPoints.forEach((kp) => { n += (kp.match(re) ?? []).length; });
     (currentMOM?.tasks as Task[] ?? []).forEach((t) => {
-      n += [...t.title.matchAll(re)].length;
-      if (t.description) n += [...t.description.matchAll(re)].length;
+      n += (t.title.match(re) ?? []).length;
+      if (t.description) n += (t.description.match(re) ?? []).length;
     });
     return n;
   }, [findText, caseSensitive, summary, keyPoints, currentMOM]);
@@ -124,8 +124,8 @@ export default function MOMEditor({ momId }: Props) {
       const newSummary   = summary.replace(re, replaceText);
       const newKeyPoints = keyPoints.map((kp) => kp.replace(re, replaceText));
 
-      const summaryCount = [...summary.matchAll(re)].length;
-      const kpCount      = keyPoints.reduce((n, kp) => n + [...kp.matchAll(re)].length, 0);
+      const summaryCount = (summary.match(re) ?? []).length;
+      const kpCount      = keyPoints.reduce((n, kp) => n + (kp.match(re) ?? []).length, 0);
 
       // Persist summary + key points to DB immediately
       await dispatch(
@@ -141,9 +141,9 @@ export default function MOMEditor({ momId }: Props) {
       const allTasks = (currentMOM.tasks as Task[] ?? []);
       for (const task of allTasks) {
         re.lastIndex = 0;
-        const titleMatches = [...task.title.matchAll(re)].length;
+        const titleMatches = (task.title.match(re) ?? []).length;
         re.lastIndex = 0;
-        const descMatches  = task.description ? [...task.description.matchAll(re)].length : 0;
+        const descMatches  = task.description ? (task.description.match(re) ?? []).length : 0;
         if (titleMatches + descMatches === 0) continue;
         taskCount += titleMatches + descMatches;
         re.lastIndex = 0;
