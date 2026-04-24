@@ -140,29 +140,37 @@ function detectLanguage(whisperLang, transcript) {
  */
 async function transcribeAudio(audioPath) {
   const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
-  logger.info(`[Pipeline] [2/4] Whisper: transcribing ${fileSizeMB} MB audio…`);
+  const useLocal   = !!process.env.WHISPER_URL;
+  const backend    = useLocal ? 'local' : 'OpenAI';
+  logger.info(`[Pipeline] [2/4] Whisper (${backend}): transcribing ${fileSizeMB} MB audio…`);
   const t0 = Date.now();
 
   const form = new FormData();
   form.append('file', fs.createReadStream(audioPath), {
-    filename: require('path').basename(audioPath),
+    filename:    require('path').basename(audioPath),
     contentType: 'audio/mpeg',
   });
-  form.append('model', 'whisper-1');
-  form.append('response_format', 'verbose_json');
 
-  const res = await axios.post(`${OPENAI_BASE}/audio/transcriptions`, form, {
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      ...form.getHeaders(),
-    },
+  let url, headers;
+  if (useLocal) {
+    url     = `${process.env.WHISPER_URL}/transcribe`;
+    headers = { ...form.getHeaders() };
+  } else {
+    url     = `${OPENAI_BASE}/audio/transcriptions`;
+    headers = { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() };
+    form.append('model', 'whisper-1');
+    form.append('response_format', 'verbose_json');
+  }
+
+  const res = await axios.post(url, form, {
+    headers,
     maxBodyLength:    Infinity,
     maxContentLength: Infinity,
-    timeout:          300_000,
+    timeout:          600_000, // local processing can take longer than cloud
   }).catch((err) => {
     if (err.response) {
       const body = JSON.stringify(err.response.data ?? {});
-      throw new Error(`Whisper API ${err.response.status}: ${body}`);
+      throw new Error(`Whisper ${backend} ${err.response.status}: ${body}`);
     }
     throw err;
   });
