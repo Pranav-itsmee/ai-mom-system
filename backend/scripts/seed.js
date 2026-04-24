@@ -11,9 +11,11 @@
  *   Meeting 3 — attended by Pranav ONLY            → only Pranav can view MOM
  *   Meeting 4 — scheduled, both invited            → both can see it
  *
- * Login credentials:
- *   admin   developer@mosaique.link          Admin@1234
- *   member  pranavswordsman5335@gmail.com     Pranav@1234
+ * Users created:
+ *   admin   ishida@mosaique.link              Admin@123
+ *   member  pranavswordsman5335@gmail.com     Pranav@2003
+ *   member  bala@mosaique.link                Bala@123
+ *   member  isha@mosaique.link                Isha@123
  */
 
 require('dotenv').config();
@@ -41,14 +43,18 @@ async function seed() {
   console.log('✔ All tables cleared');
 
   // 2. Users
-  const [adminHash, pranavHash] = await Promise.all([
-    bcrypt.hash('Admin@1234',  12),
-    bcrypt.hash('Pranav@1234', 12),
+  const [adminHash, pranavHash, balaHash, ishaHash] = await Promise.all([
+    bcrypt.hash('Admin@123',   12),
+    bcrypt.hash('Pranav@2003', 12),
+    bcrypt.hash('Bala@123',    12),
+    bcrypt.hash('Isha@123',    12),
   ]);
 
-  const admin  = await User.create({ name: 'Admin',  email: 'developer@mosaique.link',         password: adminHash,  role: 'admin'  });
-  const pranav = await User.create({ name: 'Pranav', email: 'pranavswordsman5335@gmail.com',   password: pranavHash, role: 'member' });
-  console.log('✔ Users created (2)');
+  const admin  = await User.create({ name: 'Admin',  email: 'ishida@mosaique.link',          password: adminHash,  role: 'admin'  });
+  const pranav = await User.create({ name: 'Pranav', email: 'pranavswordsman5335@gmail.com',  password: pranavHash, role: 'member' });
+  const bala   = await User.create({ name: 'Bala',   email: 'bala@mosaique.link',             password: balaHash,   role: 'member' });
+  const isha   = await User.create({ name: 'Isha',   email: 'isha@mosaique.link',             password: ishaHash,   role: 'member' });
+  console.log('✔ Users created (4)');
 
   // 3. Meetings
   const m1Start = daysAgo(7);
@@ -192,8 +198,10 @@ async function seed() {
   console.log('  ─────────────────────────────────────────────────────────────────');
   console.log('\n  Login credentials:');
   console.log('  ─────────────────────────────────────────────────────────────────');
-  console.log('  admin   developer@mosaique.link          Admin@1234');
-  console.log('  member  pranavswordsman5335@gmail.com     Pranav@1234');
+  console.log('  admin   ishida@mosaique.link              Admin@123');
+  console.log('  member  pranavswordsman5335@gmail.com     Pranav@2003');
+  console.log('  member  bala@mosaique.link                Bala@123');
+  console.log('  member  isha@mosaique.link                Isha@123');
   console.log('  ─────────────────────────────────────────────────────────────────\n');
 
   await sequelize.close();
