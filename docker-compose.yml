@@ -25,7 +25,7 @@ services:
       context: ./whisper-service
       dockerfile: Dockerfile
       args:
-        WHISPER_MODEL: base
+        WHISPER_MODEL: tiny
     restart: unless-stopped
     ports:
       - "9000:9000"
