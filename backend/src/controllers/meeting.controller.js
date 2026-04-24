@@ -312,6 +312,10 @@ async function uploadMeeting(req, res, next) {
       return res.status(400).json({ error: 'Meeting recording file is required' });
     }
 
+    const fileSizeMB = (req.file.size / 1024 / 1024).toFixed(1);
+    const platform   = req.body.platform || 'Unknown';
+    logger.info(`━━━ AI PIPELINE START ━━━ "${title}" [${platform}] — ${fileSizeMB} MB`);
+
     let meeting = await findMeetingForUpload({ meetLink: meet_link, title, scheduledAt: scheduled_at });
 
     if (meeting) {
@@ -330,7 +334,7 @@ async function uploadMeeting(req, res, next) {
         );
       }
       await meeting.update(update);
-      logger.info(`Upload attached to existing meeting ${meeting.id}: "${meeting.title}"`);
+      logger.info(`[Pipeline] Matched existing meeting #${meeting.id}: "${meeting.title}"`);
     } else {
       meeting = await Meeting.create({
         title,
@@ -343,7 +347,7 @@ async function uploadMeeting(req, res, next) {
         started_at:   new Date(scheduled_at),
         ended_at:     new Date(),
       });
-      logger.info(`Upload created new meeting ${meeting.id}: "${meeting.title}"`);
+      logger.info(`[Pipeline] Created new meeting #${meeting.id}: "${meeting.title}"`);
     }
 
     if (attendee_emails) {
@@ -357,31 +361,37 @@ async function uploadMeeting(req, res, next) {
       }
     }
 
-    // Convert to MP3 if not already
-    const nodePath  = require('path');
+    // Step 1 — Convert to MP3 if needed
+    const nodePath   = require('path');
     const uploadedPath = req.file.path;
     const ext = nodePath.extname(req.file.originalname).toLowerCase();
     let audioPath = uploadedPath;
 
     if (ext !== '.mp3') {
       const mp3Path = uploadedPath + '.mp3';
+      logger.info(`[Pipeline] [1/4] FFmpeg: converting ${ext} → MP3 (${fileSizeMB} MB input)…`);
+      const t1 = Date.now();
       try {
         const ffmpegService = require('../services/ffmpeg.service');
         audioPath = await ffmpegService.convertVideoToAudio(uploadedPath, mp3Path);
+        const mp3MB = (require('fs').statSync(audioPath).size / 1024 / 1024).toFixed(1);
+        logger.info(`[Pipeline] [1/4] FFmpeg: done → ${mp3MB} MB MP3 in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
       } catch (convErr) {
-        require('../utils/logger').warn(`FFmpeg conversion skipped, using original: ${convErr.message}`);
+        logger.warn(`[Pipeline] [1/4] FFmpeg: conversion failed — using original file (${convErr.message})`);
         audioPath = uploadedPath;
       }
+    } else {
+      logger.info(`[Pipeline] [1/4] FFmpeg: skipped — file is already MP3`);
     }
 
     await meeting.update({ audio_path: audioPath });
 
-    // Async MOM generation — don't await
+    // Steps 2–4 — Async MOM generation (Whisper → Claude → DB)
     const claudeService = require('../services/claude.service');
     claudeService.generateMOM(meeting.id, audioPath)
-      .then(() => logger.info(`Upload MOM generated for meeting ${meeting.id}`))
+      .then(() => logger.info(`━━━ AI PIPELINE DONE ━━━ meeting #${meeting.id} → completed ✓`))
       .catch(async (err) => {
-        logger.error(`Upload MOM generation failed for meeting ${meeting.id}: ${err.message}`);
+        logger.error(`━━━ AI PIPELINE FAILED ━━━ meeting #${meeting.id}: ${err.message}`);
         await meeting.update({ status: 'failed' }).catch(() => {});
       });
 

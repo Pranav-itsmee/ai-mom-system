@@ -103,11 +103,11 @@ export default function MOMEditor({ momId }: Props) {
   const matchCount = useMemo(() => {
     if (!findText.trim()) return 0;
     const re = new RegExp(escapeRegex(findText), caseSensitive ? 'g' : 'gi');
-    let n = (summary.match(re) ?? []).length;
-    keyPoints.forEach((kp) => { n += (kp.match(re) ?? []).length; });
+    let n = Array.from(summary.matchAll(re)).length;
+    keyPoints.forEach((kp) => { n += Array.from(kp.matchAll(re)).length; });
     (currentMOM?.tasks as Task[] ?? []).forEach((t) => {
-      n += (t.title.match(re) ?? []).length;
-      if (t.description) n += (t.description.match(re) ?? []).length;
+      n += Array.from(t.title.matchAll(re)).length;
+      if (t.description) n += Array.from(t.description.matchAll(re)).length;
     });
     return n;
   }, [findText, caseSensitive, summary, keyPoints, currentMOM]);
@@ -124,8 +124,8 @@ export default function MOMEditor({ momId }: Props) {
       const newSummary   = summary.replace(re, replaceText);
       const newKeyPoints = keyPoints.map((kp) => kp.replace(re, replaceText));
 
-      const summaryCount = (summary.match(re) ?? []).length;
-      const kpCount      = keyPoints.reduce((n, kp) => n + (kp.match(re) ?? []).length, 0);
+      const summaryCount = Array.from(summary.matchAll(re)).length;
+      const kpCount      = keyPoints.reduce((n, kp) => n + Array.from(kp.matchAll(re)).length, 0);
 
       // Persist summary + key points to DB immediately
       await dispatch(
@@ -141,9 +141,9 @@ export default function MOMEditor({ momId }: Props) {
       const allTasks = (currentMOM.tasks as Task[] ?? []);
       for (const task of allTasks) {
         re.lastIndex = 0;
-        const titleMatches = (task.title.match(re) ?? []).length;
+        const titleMatches = Array.from(task.title.matchAll(re)).length;
         re.lastIndex = 0;
-        const descMatches  = task.description ? (task.description.match(re) ?? []).length : 0;
+        const descMatches  = task.description ? Array.from(task.description.matchAll(re)).length : 0;
         if (titleMatches + descMatches === 0) continue;
         taskCount += titleMatches + descMatches;
         re.lastIndex = 0;

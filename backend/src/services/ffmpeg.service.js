@@ -38,14 +38,13 @@ async function convertVideoToAudio(inputPath, outputPath) {
       .audioChannels(1)
       .audioFrequency(16000)
       .output(outputPath)
-      .on('start', (cmd) => logger.debug(`FFmpeg command: ${cmd}`))
+      .on('start', (cmd) => logger.debug(`[Pipeline] FFmpeg cmd: ${cmd}`))
       .on('progress', (progress) => {
         if (progress.percent != null) {
-          logger.debug(`FFmpeg progress: ${Math.round(progress.percent)}%`);
+          logger.debug(`[Pipeline] FFmpeg progress: ${Math.round(progress.percent)}%`);
         }
       })
       .on('end', () => {
-        logger.info(`Audio conversion complete → ${outputPath}`);
         resolve(outputPath);
       })
       .on('error', (err, stdout, stderr) => {

@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { User } = require('../models');
+const { validatePasswordStrength } = require('../utils/passwordPolicy');
 
 /** GET /users — all users (used for task assignment picker) */
 async function listUsers(req, res, next) {
@@ -25,8 +26,9 @@ async function createUser(req, res, next) {
     if (!['admin', 'member'].includes(role)) {
       return res.status(400).json({ error: 'role must be admin or member' });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'password must be at least 6 characters' });
+    const passwordValidation = validatePasswordStrength(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.message });
     }
 
     const existing = await User.findOne({ where: { email: email.toLowerCase().trim() } });
@@ -39,6 +41,7 @@ async function createUser(req, res, next) {
       name:     name.trim(),
       email:    email.toLowerCase().trim(),
       password: hashed,
+      password_changed_at: new Date(),
       role,
     });
 

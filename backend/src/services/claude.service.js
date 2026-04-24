@@ -139,7 +139,9 @@ function detectLanguage(whisperLang, transcript) {
  * @returns {Promise<{ transcript: string, whisperLang: string }>}
  */
 async function transcribeAudio(audioPath) {
-  logger.info(`Transcribing audio: ${audioPath}`);
+  const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
+  logger.info(`[Pipeline] [2/4] Whisper: transcribing ${fileSizeMB} MB audio…`);
+  const t0 = Date.now();
 
   const form = new FormData();
   form.append('file', fs.createReadStream(audioPath), {
@@ -147,7 +149,7 @@ async function transcribeAudio(audioPath) {
     contentType: 'audio/mpeg',
   });
   form.append('model', 'whisper-1');
-  form.append('response_format', 'verbose_json'); // includes language field
+  form.append('response_format', 'verbose_json');
 
   const res = await axios.post(`${OPENAI_BASE}/audio/transcriptions`, form, {
     headers: {
@@ -167,7 +169,11 @@ async function transcribeAudio(audioPath) {
 
   const transcript  = res.data.text ?? '';
   const whisperLang = res.data.language ?? 'en';
-  logger.info(`Transcription complete — ${transcript.length} chars, Whisper language: ${whisperLang}`);
+  const elapsed     = ((Date.now() - t0) / 1000).toFixed(1);
+  logger.info(`[Pipeline] [2/4] Whisper: done — ${transcript.length} chars, lang: ${whisperLang}, took ${elapsed}s`);
+  if (transcript.length > 0) {
+    logger.info(`[Pipeline] [2/4] Whisper: preview → "${transcript.slice(0, 120).replace(/\n/g, ' ')}…"`);
+  }
   return { transcript, whisperLang };
 }
 
@@ -182,7 +188,8 @@ async function transcribeAudio(audioPath) {
  */
 async function callClaudeWithTranscript(transcript, language) {
   const prompt = language === 'japanese' ? PROMPT_JAPANESE : PROMPT_ENGLISH;
-  logger.info(`Calling Claude for MOM generation (language: ${language})…`);
+  logger.info(`[Pipeline] [3/4] Claude: generating MOM (language: ${language}, transcript: ${transcript.length} chars)…`);
+  const t0 = Date.now();
 
   const res = await axios.post(
     `${ANTHROPIC_BASE}/messages`,
@@ -210,6 +217,8 @@ async function callClaudeWithTranscript(transcript, language) {
 
   const block = res.data?.content?.find((b) => b.type === 'text');
   if (!block?.text) throw new Error('Claude returned no text content');
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  logger.info(`[Pipeline] [3/4] Claude: done — ${block.text.length} chars response, took ${elapsed}s`);
   return block.text;
 }
 
@@ -284,6 +293,8 @@ function normalizeTask(t) {
 // ─── Step 4: Persist to DB ────────────────────────────────────────────────────
 
 async function persistMOM(meeting, data) {
+  logger.info(`[Pipeline] [4/4] DB: persisting MOM — ${data.key_points?.length ?? 0} key points, ${data.tasks?.length ?? 0} tasks, ${data.attendees?.length ?? 0} attendees…`);
+  const t0 = Date.now();
   await sequelize.transaction(async (t) => {
     const [mom, momCreated] = await MOM.findOrCreate({
       where:    { meeting_id: meeting.id },
@@ -329,7 +340,7 @@ async function persistMOM(meeting, data) {
     await meeting.update({ status: 'completed' }, { transaction: t });
   });
 
-  logger.info(`MOM persisted for meeting ${meeting.id}`);
+  logger.info(`[Pipeline] [4/4] DB: done — meeting #${meeting.id} → completed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
@@ -364,7 +375,8 @@ async function generateMOM(meetingId, audioPath) {
   if (!fs.existsSync(audioPath)) throw new Error(`Audio file not found: ${audioPath}`);
 
   const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
-  logger.info(`Generating MOM for meeting ${meetingId} — audio: ${fileSizeMB} MB`);
+  logger.info(`[Pipeline] Starting MOM generation for meeting #${meetingId} — "${meeting.title}" (${fileSizeMB} MB)`);
+  const pipelineStart = Date.now();
 
   // Collect .webm files to delete immediately — MP3 is kept for 7 days (see scheduler cleanup)
   const webmFiles = new Set();
@@ -380,22 +392,24 @@ async function generateMOM(meetingId, audioPath) {
   }
 
   try {
-    // Step 1 — transcribe + detect language
+    // Step 2 — transcribe + detect language
     const { transcript, whisperLang } = await transcribeAudio(audioPath);
     const language = detectLanguage(whisperLang, transcript);
-    logger.info(`Meeting language: ${language} (Whisper reported: ${whisperLang})`);
+    logger.info(`[Pipeline] Language detected: ${language} (Whisper: "${whisperLang}")`);
 
-    // Step 2 — generate MOM JSON
+    // Step 3 — generate MOM JSON via Claude
     const rawText = await callClaudeWithTranscript(transcript, language);
 
-    // Step 3 — parse + normalise
+    // Step 3b — parse + normalise
     const parsed     = parseMOMResponse(rawText);
     const normalized = normalizeForDB(parsed, language);
     if (!normalized.transcript) normalized.transcript = transcript;
 
-    // Step 4 — persist
+    // Step 4 — persist to DB
     await persistMOM(meeting, normalized);
 
+    const totalSec = ((Date.now() - pipelineStart) / 1000).toFixed(1);
+    logger.info(`[Pipeline] ✓ Complete — meeting #${meetingId} processed in ${totalSec}s total`);
     return normalized;
   } finally {
     // Step 5 — delete raw .webm immediately; .mp3 is kept for 7 days (cleaned by scheduler)
