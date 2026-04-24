@@ -92,6 +92,11 @@ window.addEventListener('message', async (e) => {
   if (e.source !== window || e.data?.source !== 'aimom-hook') return;
 
   if (e.data.type === 'AIMOM_RECORDING_STARTED') {
+    // Prefer the URL captured at document_start (hook.js) — for Teams this is the real
+    // meeting join link before the SPA navigates away to /v2/.
+    if (e.data.originalUrl && e.data.originalUrl !== window.location.href) {
+      meetingLink = e.data.originalUrl;
+    }
     chrome.runtime.sendMessage({ type: 'STATUS', status: 'recording', title: meetingTitle, platform: platform?.label });
     chrome.runtime.sendMessage({
       type: 'RECORDING_STARTED',
@@ -113,6 +118,29 @@ window.addEventListener('message', async (e) => {
   }
 });
 
+// ── End detection helpers ─────────────────────────────────────────────────────
+
+// Zoom/Teams use WebAssembly/SPA UI — end phrases may never appear in the DOM.
+// Poll isInCall() every 3s as a reliable fallback for URL-based end detection.
+let endPollTimer = null;
+
+function stopRecording(reason) {
+  if (!inMeeting) return;
+  inMeeting = false;
+  clearInterval(endPollTimer);
+  endPollTimer = null;
+  console.log(`[AI MOM] ${platform.label} meeting ended (${reason}) — stopping recording`);
+  window.postMessage({ source: 'aimom-content', type: 'AIMOM_STOP' }, '*');
+}
+
+function startEndPoll() {
+  if (endPollTimer) return;
+  endPollTimer = setInterval(() => {
+    if (!inMeeting) { clearInterval(endPollTimer); endPollTimer = null; return; }
+    if (!platform.isInCall()) stopRecording('poll');
+  }, 3000);
+}
+
 // ── DOM observer — detect join / end ─────────────────────────────────────────
 
 const observer = new MutationObserver(() => {
@@ -124,8 +152,11 @@ const observer = new MutationObserver(() => {
     inMeeting    = true;
     joinedAt     = new Date().toISOString();
     meetingTitle = platform.getTitle();
+    // window.location.href may be the SPA shell URL (e.g. teams.live.com/v2/) by this point.
+    // The real join link is corrected when AIMOM_RECORDING_STARTED fires with originalUrl from hook.js.
     meetingLink  = window.location.href;
     console.log(`[AI MOM] Joined ${platform.label}: "${meetingTitle}" — recording in 3s`);
+    startEndPoll();
 
     setTimeout(() => {
       window.postMessage({ source: 'aimom-content', type: 'AIMOM_START' }, '*');
@@ -133,9 +164,7 @@ const observer = new MutationObserver(() => {
   }
 
   if (inMeeting && platform.endPhrases.some((p) => bodyText.includes(p))) {
-    inMeeting = false;
-    console.log(`[AI MOM] ${platform.label} meeting ended — stopping recording`);
-    window.postMessage({ source: 'aimom-content', type: 'AIMOM_STOP' }, '*');
+    stopRecording('phrase');
   }
 });
 

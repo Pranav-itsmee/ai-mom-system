@@ -2,6 +2,11 @@
 // Communicates with content.js via window.postMessage.
 
 (function () {
+  // Capture the URL at document_start — before Teams/Zoom SPA navigation changes it.
+  // Teams redirects from the meeting join link to /v2/ during load, so we must grab
+  // the original URL here rather than in content.js (which runs later at document_idle).
+  const ORIGINAL_URL = window.location.href;
+
   const remoteStreams = [];
   let micStream = null;
   let audioCtx = null;
@@ -76,7 +81,7 @@
       };
 
       mediaRecorder.start(10_000); // flush every 10s
-      window.postMessage({ source: 'aimom-hook', type: 'AIMOM_RECORDING_STARTED' }, '*');
+      window.postMessage({ source: 'aimom-hook', type: 'AIMOM_RECORDING_STARTED', originalUrl: ORIGINAL_URL }, '*');
       console.log('[AI MOM] Recording started');
     } catch (err) {
       window.postMessage({ source: 'aimom-hook', type: 'AIMOM_ERROR', error: err.message }, '*');

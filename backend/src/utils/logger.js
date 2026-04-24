@@ -7,10 +7,10 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Console shows warn+ by default in dev (info+ in prod, or override with CONSOLE_LOG_LEVEL).
+// Console shows info+ by default (warn+ in prod, or override with CONSOLE_LOG_LEVEL).
 // File logs always capture everything at debug+ so nothing is lost.
 const consoleLevel = process.env.CONSOLE_LOG_LEVEL
-  || (process.env.NODE_ENV === 'production' ? 'info' : 'warn');
+  || (process.env.NODE_ENV === 'production' ? 'warn' : 'info');
 
 const logger = winston.createLogger({
   level: 'debug',
