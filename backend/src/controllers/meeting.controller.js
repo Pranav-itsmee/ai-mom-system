@@ -265,6 +265,38 @@ async function createMeeting(req, res, next) {
   }
 }
 
+async function upsertLiveParticipants(meetingId, participants) {
+  if (!Array.isArray(participants) || !participants.length) return;
+  const AttendeeModel = require('../models/MeetingAttendee');
+  for (const p of participants) {
+    const name  = p.name?.trim()  || null;
+    const email = p.email?.trim() || null;
+    if (!name && !email) continue;
+
+    if (email) {
+      // Email is the stable key — upsert by email
+      const exists = await AttendeeModel.findOne({ where: { meeting_id: meetingId, email } });
+      if (exists) {
+        if (name && !exists.name) await exists.update({ name });
+        continue;
+      }
+    } else {
+      // Name-only: skip if already present for this meeting
+      const exists = await AttendeeModel.findOne({ where: { meeting_id: meetingId, name } });
+      if (exists) continue;
+    }
+
+    const matchedUser = email ? await User.findOne({ where: { email } }) : null;
+    await AttendeeModel.create({
+      meeting_id: meetingId,
+      email:      email || null,
+      name:       name || matchedUser?.name || null,
+      user_id:    matchedUser?.id || null,
+      status:     'present',
+    });
+  }
+}
+
 async function startExtensionRecording(req, res, next) {
   try {
     const { title, scheduled_at, meet_link } = req.body;
@@ -294,6 +326,11 @@ async function startExtensionRecording(req, res, next) {
         started_at: new Date(),
       });
       logger.info(`Extension recording created meeting ${meeting.id}: "${meeting.title}"`);
+    }
+
+    // Save any participants visible at recording start
+    if (req.body.participants?.length) {
+      await upsertLiveParticipants(meeting.id, req.body.participants);
     }
 
     res.status(200).json({ ok: true, meeting });
@@ -350,14 +387,12 @@ async function uploadMeeting(req, res, next) {
       logger.info(`[Pipeline] Created new meeting #${meeting.id}: "${meeting.title}"`);
     }
 
-    if (attendee_emails) {
-      const emails = String(attendee_emails).split(',').map((e) => e.trim()).filter(Boolean);
-      if (emails.length) {
-        const users = await User.findAll({ where: { email: emails } });
-        const AttendeeModel = require('../models/MeetingAttendee');
-        await Promise.all(users.map((u) =>
-          AttendeeModel.create({ meeting_id: meeting.id, user_id: u.id }),
-        ));
+    // Save live-scraped participants from the extension (name + optional email)
+    if (req.body.participants) {
+      try {
+        await upsertLiveParticipants(meeting.id, JSON.parse(req.body.participants));
+      } catch (e) {
+        logger.warn(`[Pipeline] Participants parse error: ${e.message}`);
       }
     }
 

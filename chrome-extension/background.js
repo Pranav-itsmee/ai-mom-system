@@ -100,9 +100,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          title: msg.title || 'Google Meet Recording',
+          title:        msg.title || 'Google Meet Recording',
           scheduled_at: msg.scheduledAt || new Date().toISOString(),
-          meet_link: msg.meetLink,
+          meet_link:    msg.meetLink,
+          participants: msg.participants || [],
         }),
       })
         .then(async (res) => {
@@ -148,7 +149,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       form.append('file',         blob, 'recording.webm');
       form.append('title',        msg.title       || 'Google Meet Recording');
       form.append('scheduled_at', msg.scheduledAt || new Date().toISOString());
-      if (msg.meetLink) form.append('meet_link', msg.meetLink);
+      if (msg.meetLink)      form.append('meet_link',    msg.meetLink);
+      if (msg.platform)      form.append('platform',     msg.platform);
+      if (msg.participants?.length) form.append('participants', JSON.stringify(msg.participants));
 
       fetch(`${apiUrl}/meetings/upload`, {
         method:  'POST',

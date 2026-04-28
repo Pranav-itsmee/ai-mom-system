@@ -20,6 +20,37 @@ const PLATFORM_CONFIG = {
       'This call has ended', 'You left the meeting', "You've left the call",
       'You left the call', 'You were removed', 'Return to home screen',
     ],
+    // Scrape participant names (and emails where accessible) from the Meet UI.
+    // Meet shows names on video tiles; emails only appear for Workspace accounts
+    // via data-hovercard-id attributes.
+    getParticipants: () => {
+      const found = new Map();
+      // Video tiles — always rendered during a call
+      document.querySelectorAll('[data-participant-id]').forEach(el => {
+        const name = (
+          el.querySelector('[data-self-name]')?.textContent ||
+          el.querySelector('[jsname="EydYod"]')?.textContent ||
+          el.querySelector('[jsname="rxQTgd"]')?.textContent
+        )?.trim();
+        if (!name || name.length < 2) return;
+        // Workspace accounts sometimes expose email via hovercard id
+        const hovercard = el.querySelector('[data-hovercard-id]')?.getAttribute('data-hovercard-id') || '';
+        const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(hovercard) ? hovercard : null;
+        const existing = found.get(name);
+        found.set(name, { name, email: existing?.email || email || null });
+      });
+      // People panel (if open) — may reveal more names
+      document.querySelectorAll('[data-requested-participant-id]').forEach(el => {
+        const name = (
+          el.querySelector('[jsname="DnM5Nc"]')?.textContent ||
+          el.querySelector('[data-name]')?.getAttribute('data-name')
+        )?.trim();
+        if (name && name.length >= 2 && !found.has(name)) {
+          found.set(name, { name, email: null });
+        }
+      });
+      return [...found.values()];
+    },
   },
 
   teams: {
@@ -39,6 +70,29 @@ const PLATFORM_CONFIG = {
       'You left the meeting', 'The meeting has ended', 'This call has ended',
       'Meeting ended', 'left the call', 'call has ended', 'The call ended',
     ],
+    // Teams roster uses stable data-tid attributes.
+    // Emails sometimes appear in the secondary text for org members.
+    getParticipants: () => {
+      const found = new Map();
+      document.querySelectorAll(
+        '[data-tid="roster-participant"], [data-tid="call-roster-participant"], [data-tid="participant-item"]'
+      ).forEach(el => {
+        const name = (
+          el.querySelector('[data-tid="roster-participant-name"]')?.textContent ||
+          el.querySelector('[data-tid="participant-item-name"]')?.textContent ||
+          el.querySelector('[class*="participant-name"]')?.textContent
+        )?.trim();
+        if (!name || name.length < 2) return;
+        // Subtitle sometimes contains email for org/AAD accounts
+        const subtitle = (
+          el.querySelector('[data-tid="roster-participant-secondary-text"]')?.textContent ||
+          el.querySelector('[class*="participant-subtitle"]')?.textContent
+        )?.trim() || '';
+        const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(subtitle) ? subtitle : null;
+        found.set(name, { name, email });
+      });
+      return [...found.values()];
+    },
   },
 
   zoom: {
@@ -61,6 +115,23 @@ const PLATFORM_CONFIG = {
       'You have left the meeting', 'The meeting has ended',
       'meeting has ended', 'left the meeting', 'Thank you for joining',
     ],
+    // Zoom's web client shows participant names in the participants panel.
+    // Emails are never exposed in the Zoom web UI.
+    getParticipants: () => {
+      const found = new Map();
+      document.querySelectorAll(
+        '[class*="participants-item"], [class*="participant-item"]'
+      ).forEach(el => {
+        const name = (
+          el.querySelector('[class*="participants-item__name"]')?.textContent ||
+          el.querySelector('[class*="participant__name"]')?.textContent ||
+          el.querySelector('[class*="displayName"]')?.textContent
+        )?.trim();
+        if (!name || name.length < 2) return;
+        found.set(name, { name, email: null });
+      });
+      return [...found.values()];
+    },
   },
 };
 
@@ -81,42 +152,29 @@ if (!platform) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let inMeeting    = false;
-let meetingTitle = '';
-let meetingLink  = '';
-let joinedAt     = null;
+let inMeeting      = false;
+let meetingTitle   = '';
+let meetingLink    = '';
+let joinedAt       = null;
+let participantMap = new Map(); // name → {name, email}
 
-// ── hook.js → content.js messages ────────────────────────────────────────────
+// ── Participant scraping ──────────────────────────────────────────────────────
 
-window.addEventListener('message', async (e) => {
-  if (e.source !== window || e.data?.source !== 'aimom-hook') return;
-
-  if (e.data.type === 'AIMOM_RECORDING_STARTED') {
-    // Prefer the URL captured at document_start (hook.js) — for Teams this is the real
-    // meeting join link before the SPA navigates away to /v2/.
-    if (e.data.originalUrl && e.data.originalUrl !== window.location.href) {
-      meetingLink = e.data.originalUrl;
+function scanParticipants() {
+  if (!inMeeting || !platform?.getParticipants) return;
+  platform.getParticipants().forEach(p => {
+    const existing = participantMap.get(p.name);
+    if (!existing) {
+      participantMap.set(p.name, p);
+    } else if (p.email && !existing.email) {
+      // Upgrade name-only entry with email if we now see it
+      participantMap.set(p.name, { ...existing, email: p.email });
     }
-    chrome.runtime.sendMessage({ type: 'STATUS', status: 'recording', title: meetingTitle, platform: platform?.label });
-    chrome.runtime.sendMessage({
-      type: 'RECORDING_STARTED',
-      title:       meetingTitle,
-      scheduledAt: joinedAt || new Date().toISOString(),
-      meetLink:    meetingLink,
-      platform:    platform?.label,
-    });
-  }
+  });
+}
 
-  if (e.data.type === 'AIMOM_RECORDING_DONE') {
-    chrome.runtime.sendMessage({ type: 'STATUS', status: 'uploading', title: meetingTitle, platform: platform?.label });
-    await uploadThroughServiceWorker(e.data);
-  }
-
-  if (e.data.type === 'AIMOM_ERROR') {
-    console.error('[AI MOM Content]', e.data.error);
-    chrome.runtime.sendMessage({ type: 'STATUS', status: 'error', message: e.data.error });
-  }
-});
+// Scan every 30 s — catches participants who open/close their panel mid-meeting
+setInterval(scanParticipants, 30_000);
 
 // ── End detection helpers ─────────────────────────────────────────────────────
 
@@ -141,6 +199,41 @@ function startEndPoll() {
   }, 3000);
 }
 
+// ── hook.js → content.js messages ────────────────────────────────────────────
+
+window.addEventListener('message', async (e) => {
+  if (e.source !== window || e.data?.source !== 'aimom-hook') return;
+
+  if (e.data.type === 'AIMOM_RECORDING_STARTED') {
+    // Prefer the URL captured at document_start (hook.js) — for Teams this is the real
+    // meeting join link before the SPA navigates away to /v2/.
+    if (e.data.originalUrl && e.data.originalUrl !== window.location.href) {
+      meetingLink = e.data.originalUrl;
+    }
+    scanParticipants();
+    chrome.runtime.sendMessage({ type: 'STATUS', status: 'recording', title: meetingTitle, platform: platform?.label });
+    chrome.runtime.sendMessage({
+      type:         'RECORDING_STARTED',
+      title:        meetingTitle,
+      scheduledAt:  joinedAt || new Date().toISOString(),
+      meetLink:     meetingLink,
+      platform:     platform?.label,
+      participants: [...participantMap.values()],
+    });
+  }
+
+  if (e.data.type === 'AIMOM_RECORDING_DONE') {
+    scanParticipants(); // final scan before upload
+    chrome.runtime.sendMessage({ type: 'STATUS', status: 'uploading', title: meetingTitle, platform: platform?.label });
+    await uploadThroughServiceWorker(e.data);
+  }
+
+  if (e.data.type === 'AIMOM_ERROR') {
+    console.error('[AI MOM Content]', e.data.error);
+    chrome.runtime.sendMessage({ type: 'STATUS', status: 'error', message: e.data.error });
+  }
+});
+
 // ── DOM observer — detect join / end ─────────────────────────────────────────
 
 const observer = new MutationObserver(() => {
@@ -149,22 +242,27 @@ const observer = new MutationObserver(() => {
   const bodyText = document.body?.innerText ?? '';
 
   if (!inMeeting && platform.isInCall()) {
-    inMeeting    = true;
-    joinedAt     = new Date().toISOString();
-    meetingTitle = platform.getTitle();
+    inMeeting      = true;
+    joinedAt       = new Date().toISOString();
+    meetingTitle   = platform.getTitle();
+    participantMap = new Map(); // reset for fresh meeting
     // window.location.href may be the SPA shell URL (e.g. teams.live.com/v2/) by this point.
     // The real join link is corrected when AIMOM_RECORDING_STARTED fires with originalUrl from hook.js.
     meetingLink  = window.location.href;
     console.log(`[AI MOM] Joined ${platform.label}: "${meetingTitle}" — recording in 3s`);
     startEndPoll();
+    scanParticipants();
 
     setTimeout(() => {
       window.postMessage({ source: 'aimom-content', type: 'AIMOM_START' }, '*');
     }, 3000);
   }
 
-  if (inMeeting && platform.endPhrases.some((p) => bodyText.includes(p))) {
-    stopRecording('phrase');
+  if (inMeeting) {
+    scanParticipants();
+    if (platform.endPhrases.some((p) => bodyText.includes(p))) {
+      stopRecording('phrase');
+    }
   }
 });
 
@@ -181,13 +279,14 @@ if (document.body) {
 async function uploadThroughServiceWorker({ data: base64, mimeType }) {
   try {
     await chrome.runtime.sendMessage({
-      type:        'UPLOAD',
-      data:        base64,
+      type:         'UPLOAD',
+      data:         base64,
       mimeType,
-      title:       meetingTitle,
-      scheduledAt: joinedAt || new Date().toISOString(),
-      meetLink:    meetingLink,
-      platform:    platform?.label,
+      title:        meetingTitle,
+      scheduledAt:  joinedAt || new Date().toISOString(),
+      meetLink:     meetingLink,
+      platform:     platform?.label,
+      participants: [...participantMap.values()],
     });
   } catch (err) {
     console.error('[AI MOM] Upload dispatch failed:', err.message);
