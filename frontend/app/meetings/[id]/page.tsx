@@ -49,12 +49,15 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   }, [params.id, currentMeeting?.status]);
 
   async function handleRegenerate() {
-    if (!currentMeeting?.mom) return;
+    if (!currentMeeting) return;
     setRegenerating(true);
     setRegenMsg('');
     try {
-      const res = await api.post(`/mom/${currentMeeting.mom.id}/regenerate`);
-      setRegenMsg(res.data.message ?? 'Regeneration started');
+      // If MOM exists, use mom regenerate endpoint; otherwise retry via meeting endpoint
+      const res = currentMeeting.mom
+        ? await api.post(`/mom/${currentMeeting.mom.id}/regenerate`)
+        : await api.post(`/meetings/${currentMeeting.id}/retry`);
+      setRegenMsg(res.data.message ?? 'Pipeline started — refresh in a moment');
     } catch (err: any) {
       setRegenMsg(err.response?.data?.error || 'Regeneration failed');
     } finally {
@@ -160,11 +163,9 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
             <p className="text-sm text-red-600 dark:text-red-400 font-medium">
               {t('status.failed')}: {t('common.error')}
             </p>
-            {mom && (
-              <button onClick={handleRegenerate} disabled={regenerating} className="btn-danger text-xs py-1.5">
-                {regenerating ? t('common.loading') : t('btn.regenerate')}
-              </button>
-            )}
+            <button onClick={handleRegenerate} disabled={regenerating} className="btn-danger text-xs py-1.5">
+              {regenerating ? t('common.loading') : t('btn.regenerate')}
+            </button>
           </div>
         )}
         {regenMsg && (

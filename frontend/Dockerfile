@@ -15,6 +15,8 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV BACKEND_URL=$BACKEND_URL
 
 RUN npm run build
+# Ensure public dir exists so the runner stage copy never fails
+RUN mkdir -p /app/public
 
 # ── Stage 2: Production runner ────────────────────────────────────────────────
 FROM node:18-alpine AS runner
@@ -26,6 +28,7 @@ ENV NODE_ENV=production
 # next.config.js output: 'standalone' produces a self-contained server
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static     ./.next/static
+COPY --from=builder /app/public           ./public
 
 EXPOSE 3000
 

@@ -60,6 +60,87 @@ function fmtShortDate(iso: string | null | undefined) {
   }).format(new Date(iso));
 }
 
+// ── Attendee row with inline name edit ───────────────────────────────────────
+
+function AttendeeRow({ index, attendee, displayName, displayEmail, isOrganizer, meetingId }: {
+  index: number; attendee: any; displayName: string | null;
+  displayEmail: string; isOrganizer: boolean; meetingId?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name,    setName]    = useState(displayName ?? '');
+  const [saved,   setSaved]   = useState(displayName);
+  const [saving,  setSaving]  = useState(false);
+
+  async function save() {
+    if (!meetingId || !attendee.id) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await api.patch(`/meetings/${meetingId}/attendees/${attendee.id}`, { name });
+      setSaved(name || null);
+      setEditing(false);
+    } catch { /* keep editing open on error */ }
+    finally { setSaving(false); }
+  }
+
+  const shownName = saved ?? '—';
+  return (
+    <tr className="hover:bg-[var(--bg)] transition-colors">
+      <Td className="text-[var(--text-muted)] text-[12px]">{index + 1}</Td>
+      <Td>
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+              className="input py-0.5 px-2 text-[13px] w-40"
+            />
+            <button onClick={save} disabled={saving}
+              className="text-[11px] text-[var(--primary-deep)] font-semibold hover:underline disabled:opacity-50">
+              {saving ? '…' : 'Save'}
+            </button>
+            <button onClick={() => setEditing(false)} className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text)]">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 group">
+            <span className="w-7 h-7 rounded-full bg-[var(--primary)]/20 text-[var(--primary-deep)] text-[11px] font-bold flex items-center justify-center shrink-0">
+              {shownName !== '—' ? shownName.charAt(0).toUpperCase() : '?'}
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold text-[13px] text-[var(--text)] truncate">
+                {displayEmail}
+                {isOrganizer && (
+                  <span className="ml-1.5 inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-amber-100 text-amber-700 border-amber-200">Host</span>
+                )}
+              </p>
+              <p className="text-[11px] text-[var(--text-muted)] truncate flex items-center gap-1">
+                {shownName !== '—' ? shownName : <span className="italic">No name</span>}
+                <button
+                  onClick={() => { setName(saved ?? ''); setEditing(true); }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--primary-deep)]"
+                  title="Edit name"
+                >
+                  <Pencil size={10} />
+                </button>
+              </p>
+            </div>
+          </div>
+        )}
+      </Td>
+      <Td className="hidden">{null}</Td>
+      <Td>
+        {attendee.status === 'absent'
+          ? <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-100 text-red-600 border-red-200">Absent</span>
+          : <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-green-100 text-green-700 border-green-200">Present</span>
+        }
+      </Td>
+    </tr>
+  );
+}
+
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
 function DocSection({
@@ -718,40 +799,28 @@ export default function MOMPage({ params }: { params: { id: string } }) {
                       <thead>
                         <tr>
                           <Th className="w-8">#</Th>
-                          <Th>Name</Th>
-                          <Th>Email</Th>
+                          <Th>Attendee</Th>
+                          <Th className="hidden">{null}</Th>
                           <Th>Status</Th>
                         </tr>
                       </thead>
                       <tbody>
                         {attendees.map((a: any, i: number) => {
                           const displayEmail = a.user?.email ?? a.email ?? '—';
-                          const displayName  = a.user?.name ?? a.name ?? '—';
+                          const displayName  = a.user?.name ?? a.name ?? null;
                           const isOrganizer  =
                             (meeting?.organizer_id && a.user?.id === meeting.organizer_id) ||
                             ((meeting as any)?.organizer_email && displayEmail === (meeting as any).organizer_email);
                           return (
-                            <tr key={i} className="hover:bg-[var(--bg)] transition-colors">
-                              <Td className="text-[var(--text-muted)] text-[12px]">{i + 1}</Td>
-                              <Td>
-                                <div className="flex items-center gap-2.5">
-                                  <span className="w-7 h-7 rounded-full bg-[var(--primary)]/20 text-[var(--primary-deep)] text-[11px] font-bold flex items-center justify-center shrink-0">
-                                    {displayName.charAt(0).toUpperCase()}
-                                  </span>
-                                  <span className="font-semibold">{displayName}</span>
-                                  {isOrganizer && (
-                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-amber-100 text-amber-700 border-amber-200">Host</span>
-                                  )}
-                                </div>
-                              </Td>
-                              <Td className="text-[var(--text-muted)]">{displayEmail}</Td>
-                              <Td>
-                                {a.status === 'absent'
-                                  ? <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-red-100 text-red-600 border-red-200">Absent</span>
-                                  : <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-green-100 text-green-700 border-green-200">Present</span>
-                                }
-                              </Td>
-                            </tr>
+                            <AttendeeRow
+                              key={a.id ?? i}
+                              index={i}
+                              attendee={a}
+                              displayName={displayName}
+                              displayEmail={displayEmail}
+                              isOrganizer={isOrganizer}
+                              meetingId={currentMOM?.meeting_id}
+                            />
                           );
                         })}
                       </tbody>

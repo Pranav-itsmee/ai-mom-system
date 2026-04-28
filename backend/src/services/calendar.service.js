@@ -11,6 +11,18 @@ function normalizeMeetingTitle(title) {
     .toLowerCase();
 }
 
+// Derive a readable name from an email address when no displayName is available
+// e.g. "pranav.itsmee.official@gmail.com" → "Pranav Itsmee Official"
+function nameFromEmail(email) {
+  if (!email) return null;
+  const local = email.split('@')[0];
+  return local
+    .split(/[._\-+]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
 async function findRecordingCreatedMeeting(title, scheduledAt) {
   const normalizedTitle = normalizeMeetingTitle(title);
   if (!normalizedTitle) return null;
@@ -30,26 +42,52 @@ async function findRecordingCreatedMeeting(title, scheduledAt) {
 }
 
 /**
- * Look up the Google profile display name for an email address using the
- * People API "Other Contacts" (people interacted with via Gmail / Meet).
- * Returns null silently if the scope is missing or the contact isn't found.
+ * Look up the real display name for an email address using multiple Google APIs:
+ * 1. People API — otherContacts (Gmail/Meet interaction history)
+ * 2. People API — searchContacts (full saved contacts list)
+ * 3. Admin Directory API — Workspace users in the same org
+ * Returns null if none of the sources have the contact.
  */
 async function fetchProfileName(auth, email) {
+  const people = google.people({ version: 'v1', auth });
+
+  // 1. Other contacts (people interacted with via Gmail / Meet)
   try {
-    const people = google.people({ version: 'v1', auth });
     const res = await people.otherContacts.search({
-      query: email,
-      readMask: 'names,emailAddresses',
-      pageSize: 5,
+      query: email, readMask: 'names,emailAddresses', pageSize: 5,
     });
     for (const r of res.data.results ?? []) {
       const matched = (r.person?.emailAddresses ?? []).some((e) => e.value === email);
-      if (matched) return r.person?.names?.[0]?.displayName ?? null;
+      if (matched) {
+        const name = r.person?.names?.[0]?.displayName;
+        if (name) return name;
+      }
     }
-    return null;
-  } catch {
-    return null;
-  }
+  } catch { /* scope missing or no results */ }
+
+  // 2. Full contacts list
+  try {
+    const res = await people.people.searchContacts({
+      query: email, readMask: 'names,emailAddresses', pageSize: 5,
+    });
+    for (const r of res.data.results ?? []) {
+      const matched = (r.person?.emailAddresses ?? []).some((e) => e.value === email);
+      if (matched) {
+        const name = r.person?.names?.[0]?.displayName;
+        if (name) return name;
+      }
+    }
+  } catch { /* scope missing or no results */ }
+
+  // 3. Google Workspace Directory (only works if attendee is in the same org)
+  try {
+    const admin = google.admin({ version: 'directory_v1', auth });
+    const res = await admin.users.get({ userKey: email });
+    const name = res.data.name?.fullName ?? res.data.name?.givenName;
+    if (name) return name;
+  } catch { /* not a Workspace user or scope missing */ }
+
+  return null;
 }
 
 /**
@@ -211,7 +249,7 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
 
       const matchedUser = await User.findOne({ where: { email: attendee.email } });
 
-      // Best name: calendar displayName → system user name → People API → null
+      // Best name: calendar displayName → system user name → People API (3 sources) → null
       const resolvedName =
         attendee.displayName
         ?? matchedUser?.name

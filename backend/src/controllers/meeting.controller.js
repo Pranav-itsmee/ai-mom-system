@@ -491,4 +491,38 @@ async function getCalendarEvents(req, res, next) {
   }
 }
 
-module.exports = { listMeetings, getMeeting, createMeeting, startExtensionRecording, uploadMeeting, syncCalendar, updateMeetingStatus, deleteMeeting, updateMeetingInfo, getCalendarEvents };
+async function updateAttendee(req, res, next) {
+  try {
+    const attendee = await MeetingAttendee.findOne({
+      where: { id: req.params.attendeeId, meeting_id: req.params.id },
+    });
+    if (!attendee) return res.status(404).json({ error: 'Attendee not found' });
+    const { name } = req.body;
+    if (typeof name === 'string') await attendee.update({ name: name.trim() || null });
+    res.json({ ok: true, attendee });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function retryPipeline(req, res, next) {
+  try {
+    const meeting = await Meeting.findByPk(req.params.id);
+    if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+    if (!meeting.audio_path) return res.status(422).json({ error: 'No audio file for this meeting' });
+
+    await meeting.update({ status: 'processing' });
+    require('../services/claude.service')
+      .generateMOM(meeting.id, meeting.audio_path)
+      .catch((err) => {
+        logger.error(`Retry pipeline failed for meeting ${meeting.id}: ${err.message}`);
+        meeting.update({ status: 'failed' }).catch(() => {});
+      });
+
+    res.json({ message: 'Pipeline restarted' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listMeetings, getMeeting, createMeeting, startExtensionRecording, uploadMeeting, syncCalendar, updateMeetingStatus, deleteMeeting, updateMeetingInfo, getCalendarEvents, retryPipeline, updateAttendee };

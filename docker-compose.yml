@@ -1,24 +1,25 @@
 services:
 
-  # ── Local Whisper (faster-whisper transcription sidecar) ─────────────────────
-  whisper:
-    build:
-      context: ./whisper-service
-      dockerfile: Dockerfile
-      args:
-        WHISPER_MODEL: tiny
-    container_name: mom_whisper
+  # ── MySQL ─────────────────────────────────────────────────────────────────────
+  shared-mysql:
+    image: mysql:8.0
+    container_name: shared-mysql
     restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ai_mom_db
+    volumes:
+      - mysql_data:/var/lib/mysql
     networks:
       - dev-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
-      interval: 10s
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "3306", "-u", "root", "-proot", "-e", "SELECT 1"]
+      interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 60s
+      retries: 20
+      start_period: 30s
 
-  # ── Backend (Express + Puppeteer + FFmpeg) ───────────────────────────────────
+  # ── Backend (Express + FFmpeg) ────────────────────────────────────────────────
   app:
     build:
       context: ./backend
@@ -28,20 +29,18 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      NODE_ENV: production
       DB_HOST: shared-mysql
       DB_PORT: "3306"
       DB_USER: root
       DB_PASSWORD: root
-      MYSQL_HOST: shared-mysql
-      MYSQL_PORT: "3306"
       FRONTEND_URL: https://mom.mosaique.work
-      GOOGLE_REDIRECT_URI: https://mom.mosaique.work/auth/google/callback
+      GOOGLE_REDIRECT_URI: https://mom.mosaique.work/api/v1/auth/google/callback
       FFMPEG_PATH: /usr/bin/ffmpeg
       FFPROBE_PATH: /usr/bin/ffprobe
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       BOT_PROFILE_DIR: /app/bot-chrome-profile
-      WHISPER_URL: http://mom_whisper:9000
     ports:
       - "8011:5000"
     networks:
@@ -53,12 +52,11 @@ services:
       - backend_logs:/app/logs
       - avatars:/app/public/avatars
       - bot_profile:/app/bot-chrome-profile
-      - backend_temp:/app/backend/temp
     depends_on:
-      whisper:
+      shared-mysql:
         condition: service_healthy
 
-  # ── Frontend (Next.js) ───────────────────────────────────────────────────────
+  # ── Frontend (Next.js standalone) ────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -67,6 +65,7 @@ services:
         NEXT_PUBLIC_API_URL: /api/v1
         BACKEND_URL: http://mom-backend:5000
     environment:
+      NODE_ENV: production
       BACKEND_URL: http://mom-backend:5000
     container_name: mom_frontend
     restart: unless-stopped
@@ -83,11 +82,11 @@ services:
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  bot_profile:
-  backend_temp:
+  mysql_data:
+  temp_files:
   backend_logs:
   avatars:
-  temp_files:
+  bot_profile:
 
 networks:
   dev-net:

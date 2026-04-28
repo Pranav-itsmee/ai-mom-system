@@ -14,6 +14,8 @@ const {
   startExtensionRecording,
   updateMeetingInfo,
   getCalendarEvents,
+  retryPipeline,
+  updateAttendee,
 } = require('../controllers/meeting.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
@@ -51,5 +53,7 @@ router.get('/:id',              getMeeting);
 router.patch('/:id/status',     updateMeetingStatus);
 router.patch('/:id/info',       updateMeetingInfo);
 router.delete('/:id',           deleteMeeting);
+router.post('/:id/retry',                         retryPipeline);
+router.patch('/:id/attendees/:attendeeId',        updateAttendee);
 
 module.exports = router;
