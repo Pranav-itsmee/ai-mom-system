@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const FormData = require('form-data');
 const { sequelize } = require('../config/db');
-const { Meeting, MOM, MOMKeyPoint, Task, MeetingAttendee } = require('../models');
+const { Meeting, MOM, MOMKeyPoint, Task } = require('../models');
 const { parseMOMResponse } = require('./mom.parser');
 const logger = require('../utils/logger');
 
@@ -31,7 +31,6 @@ Return ONLY a valid JSON object (no preamble, no markdown):
   "transcript": "<verbatim transcript as provided>",
   "title": "<meeting title inferred from discussion, or 'Untitled Meeting'>",
   "date_time": "<YYYY-MM-DD HH:MM if identifiable from conversation, else null>",
-  "participants": ["<Name 1>", "<Name 2>"],
   "agenda": ["<agenda topic 1>", "<agenda topic 2>"],
   "key_discussion_points": ["<discussion point 1>", "<discussion point 2>"],
   "decisions": ["<decision 1>", "<decision 2>"],
@@ -69,7 +68,6 @@ Return ONLY a valid JSON object (no preamble, no markdown):
   "japanese": {
     "title": "<会議タイトル（議論から推定）>",
     "date_time": "<YYYY-MM-DD HH:MM または null>",
-    "participants": ["<参加者1>", "<参加者2>"],
     "agenda": ["<議題1>", "<議題2>"],
     "key_discussion_points": ["<議論のポイント1>", "<議論のポイント2>"],
     "decisions": ["<決定事項1>", "<決定事項2>"],
@@ -87,7 +85,6 @@ Return ONLY a valid JSON object (no preamble, no markdown):
   "english": {
     "title": "<Meeting title>",
     "date_time": "<YYYY-MM-DD HH:MM or null>",
-    "participants": ["<Name 1>", "<Name 2>"],
     "agenda": ["<agenda topic 1>", "<agenda topic 2>"],
     "key_discussion_points": ["<discussion point 1>", "<discussion point 2>"],
     "decisions": ["<decision 1>", "<decision 2>"],
@@ -266,9 +263,7 @@ function normalizeForDB(parsed, language) {
       transcript: parsed.transcript || '',
       summary:    `${jp.summary || ''}\n\n---\n[English Translation]\n${en.summary || ''}`,
       key_points: [...jpPoints, ...enPoints],
-      // Use English action items so deadline/priority fields stay in English
       tasks,
-      attendees:  en.participants || jp.participants || [],
     };
   }
 
@@ -284,7 +279,6 @@ function normalizeForDB(parsed, language) {
       ...(parsed.decisions             || []).map((p) => `[Decision] ${p}`),
     ],
     tasks,
-    attendees: parsed.participants || [],
   };
 }
 
@@ -301,7 +295,7 @@ function normalizeTask(t) {
 // ─── Step 4: Persist to DB ────────────────────────────────────────────────────
 
 async function persistMOM(meeting, data) {
-  logger.info(`[Pipeline] [4/4] DB: persisting MOM — ${data.key_points?.length ?? 0} key points, ${data.tasks?.length ?? 0} tasks, ${data.attendees?.length ?? 0} attendees…`);
+  logger.info(`[Pipeline] [4/4] DB: persisting MOM — ${data.key_points?.length ?? 0} key points, ${data.tasks?.length ?? 0} tasks…`);
   const t0 = Date.now();
   await sequelize.transaction(async (t) => {
     const [mom, momCreated] = await MOM.findOrCreate({
@@ -330,19 +324,6 @@ async function persistMOM(meeting, data) {
         data.tasks.map((task) => ({ mom_id: mom.id, ...task, status: 'pending' })),
         { transaction: t },
       );
-    }
-
-    if (data.attendees?.length > 0) {
-      const existing = await MeetingAttendee.findAll({
-        where: { meeting_id: meeting.id }, attributes: ['name'], transaction: t,
-      });
-      const existingNames = new Set(existing.map((a) => a.name?.toLowerCase()));
-      const newOnes = data.attendees
-        .filter((name) => name && !existingNames.has(name.toLowerCase()))
-        .map((name) => ({ meeting_id: meeting.id, name }));
-      if (newOnes.length > 0) {
-        await MeetingAttendee.bulkCreate(newOnes, { transaction: t });
-      }
     }
 
     await meeting.update({ status: 'completed' }, { transaction: t });
