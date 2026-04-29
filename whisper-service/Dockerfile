@@ -15,8 +15,11 @@ WORKDIR /app
 COPY main.py .
 
 # Pre-download the model at build time so the container starts instantly
-ARG WHISPER_MODEL=base
+# Default: medium — good balance of accuracy and speed for mixed JP/EN meetings
+ARG WHISPER_MODEL=medium
 ENV WHISPER_MODEL=${WHISPER_MODEL}
+ENV JP_RATIO_THRESHOLD=0.08
+
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8')"
 
 EXPOSE 9000

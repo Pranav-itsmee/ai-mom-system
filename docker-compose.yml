@@ -41,6 +41,7 @@ services:
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       BOT_PROFILE_DIR: /app/bot-chrome-profile
+      WHISPER_URL: http://mom-whisper:9000
     ports:
       - "8011:5000"
     networks:
@@ -55,6 +56,31 @@ services:
     depends_on:
       shared-mysql:
         condition: service_healthy
+      whisper:
+        condition: service_started
+
+  # ── Whisper transcription service ────────────────────────────────────────────
+  whisper:
+    build:
+      context: ./whisper-service
+      dockerfile: Dockerfile
+      args:
+        WHISPER_MODEL: medium
+    container_name: mom_whisper
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: medium
+      JP_RATIO_THRESHOLD: "0.08"
+    ports:
+      - "9000:9000"
+    networks:
+      dev-net:
+        aliases:
+          - mom-whisper
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
   # ── Frontend (Next.js standalone) ────────────────────────────────────────────
   frontend:

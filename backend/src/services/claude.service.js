@@ -22,7 +22,13 @@ const CLAUDE_HEADERS = () => ({
 
 const PROMPT_ENGLISH = `
 You are an expert meeting documentation assistant.
-The transcript below is in English. Generate the MOM in English.
+
+The transcript below has been classified as an ENGLISH meeting.
+
+OUTPUT RULES (STRICT):
+- Generate the MOM ONLY in English.
+- DO NOT include Japanese text anywhere.
+- DO NOT include translations.
 
 Return ONLY a valid JSON object (no preamble, no markdown):
 
@@ -58,7 +64,13 @@ Rules:
 
 const PROMPT_JAPANESE = `
 You are an expert meeting documentation assistant.
-The transcript below is primarily in Japanese. Generate the MOM in BOTH Japanese and English.
+
+The transcript below has been classified as a JAPANESE meeting (Japanese is the primary or significantly present language).
+
+OUTPUT RULES (STRICT):
+- Generate the MOM in BOTH Japanese AND English.
+- Japanese version MUST come first.
+- The English section must be a faithful, professional translation of the Japanese content — not a summary, not a paraphrase. Preserve all intent, nuance, and detail.
 
 Return ONLY a valid JSON object (no preamble, no markdown):
 
@@ -83,28 +95,28 @@ Return ONLY a valid JSON object (no preamble, no markdown):
     "summary": "<2〜4文の要約（専門的なトーン）>"
   },
   "english": {
-    "title": "<Meeting title>",
+    "title": "<Faithful English translation of the Japanese title>",
     "date_time": "<YYYY-MM-DD HH:MM or null>",
-    "agenda": ["<agenda topic 1>", "<agenda topic 2>"],
-    "key_discussion_points": ["<discussion point 1>", "<discussion point 2>"],
-    "decisions": ["<decision 1>", "<decision 2>"],
+    "agenda": ["<faithful translation of agenda item 1>", "<faithful translation of agenda item 2>"],
+    "key_discussion_points": ["<faithful translation of discussion point 1>", "<faithful translation of discussion point 2>"],
+    "decisions": ["<faithful translation of decision 1>", "<faithful translation of decision 2>"],
     "action_items": [
       {
-        "title": "<task title>",
-        "description": "<what needs to be done>",
+        "title": "<faithful translation of task title>",
+        "description": "<faithful translation of what needs to be done>",
         "assigned_to": "<name or 'Unassigned'>",
         "deadline": "<YYYY-MM-DD or null>",
         "priority": "<high | medium | low>"
       }
     ],
-    "summary": "<2–4 sentence professional executive summary (high-quality translation, not literal)>"
+    "summary": "<faithful, professional English translation of the Japanese summary — preserve full intent and detail>"
   }
 }
 
 Rules:
 - Japanese section: use natural, professional Japanese.
-- English section: natural English translation — preserve intent and nuance, not literal words.
-- Extract every action item from both languages.
+- English section: faithful professional translation — NOT a summary, NOT a simplification. Every point in Japanese must appear in English.
+- Extract every action item regardless of which language it was spoken in.
 - Convert verbal deadlines to YYYY-MM-DD.
 - Do not invent information not in the transcript.
 - Return JSON only.
@@ -121,9 +133,21 @@ Rules:
  * @returns {'english' | 'japanese'}
  */
 function detectLanguage(whisperLang, transcript) {
+  // Whisper service already runs the jp-ratio check and overrides to 'ja' when needed,
+  // but we run the same check here as a safety net (e.g. when using OpenAI Whisper which
+  // only returns a single language code based on the first 30s of audio).
   if (whisperLang === 'ja') return 'japanese';
-  // Fallback: Japanese Unicode ranges (hiragana, katakana, CJK)
-  if (/[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fef]/.test(transcript)) return 'japanese';
+
+  // Count Japanese characters (hiragana, katakana, CJK unified ideographs)
+  const jpChars    = (transcript.match(/[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fef]/g) || []).length;
+  const totalChars = transcript.replace(/\s/g, '').length;
+  const jpRatio    = totalChars > 0 ? jpChars / totalChars : 0;
+
+  logger.debug(`detectLanguage \u2014 whisper="${whisperLang}", jp_chars=${jpChars}, jp_ratio=${jpRatio.toFixed(3)}`);
+
+  // \u22658% Japanese characters = Japanese is significantly present \u2192 use Japanese prompt
+  if (jpRatio >= 0.08) return 'japanese';
+
   return 'english';
 }
 
