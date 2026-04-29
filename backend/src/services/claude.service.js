@@ -265,20 +265,36 @@ async function callClaudeWithTranscript(transcript, language) {
  * @param {string} language - 'english' | 'japanese'
  * @returns {{ transcript, summary, key_points, tasks, attendees }}
  */
+/**
+ * Pair Japanese and English points side-by-side into a single entry.
+ * Format: `[JP_PREFIX] jp text\n[EN] en translation`
+ * Same-index items are assumed to be translations of each other (Claude produces them in order).
+ * If counts differ, unpaired items are stored without a translation.
+ */
+function pairJpEn(jpList = [], enList = [], jpPrefix) {
+  const len = Math.max(jpList.length, enList.length);
+  const result = [];
+  for (let i = 0; i < len; i++) {
+    const jp = (jpList[i] || '').trim();
+    const en = (enList[i] || '').trim();
+    if (jp && en)  result.push(`${jpPrefix} ${jp}\n[EN] ${en}`);
+    else if (jp)   result.push(`${jpPrefix} ${jp}`);
+    // EN-only (no JP counterpart) — skip; EN is just a translation aid
+  }
+  return result;
+}
+
 function normalizeForDB(parsed, language) {
   if (language === 'japanese') {
     const jp = parsed.japanese || {};
     const en = parsed.english  || {};
 
-    const jpPoints = [
-      ...(jp.agenda                || []).map((p) => `[議題] ${p}`),
-      ...(jp.key_discussion_points || []).map((p) => `[議論] ${p}`),
-      ...(jp.decisions             || []).map((p) => `[決定] ${p}`),
-    ];
-    const enPoints = [
-      ...(en.agenda                || []).map((p) => `[EN Agenda] ${p}`),
-      ...(en.key_discussion_points || []).map((p) => `[EN Discussion] ${p}`),
-      ...(en.decisions             || []).map((p) => `[EN Decision] ${p}`),
+    // Each JP point is paired with its EN translation in a single row.
+    // Format: "[議題] japanese text\n[EN] english translation"
+    const key_points = [
+      ...pairJpEn(jp.agenda,                en.agenda,                '[議題]'),
+      ...pairJpEn(jp.key_discussion_points, en.key_discussion_points, '[議論]'),
+      ...pairJpEn(jp.decisions,             en.decisions,             '[決定]'),
     ];
 
     const tasks = (en.action_items || jp.action_items || []).map(normalizeTask);
@@ -286,7 +302,7 @@ function normalizeForDB(parsed, language) {
     return {
       transcript: parsed.transcript || '',
       summary:    `${jp.summary || ''}\n\n---\n[English Translation]\n${en.summary || ''}`,
-      key_points: [...jpPoints, ...enPoints],
+      key_points,
       tasks,
     };
   }

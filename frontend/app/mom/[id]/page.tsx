@@ -44,6 +44,28 @@ function parsePrefix(text: string): { prefix: string | null; rest: string } {
   return { prefix: null, rest: text };
 }
 
+// Split a paired "jp text\n[EN] en text" key point into its two parts.
+function splitJpEn(text: string): { jp: string; en: string | null } {
+  const idx = text.indexOf('\n[EN] ');
+  if (idx !== -1) return { jp: text.slice(0, idx).trim(), en: text.slice(idx + 6).trim() };
+  return { jp: text, en: null };
+}
+
+// legacyEn: used for old MOMs that stored EN as a separate row — passed in from the paired index
+function KeyPointCell({ text, legacyEn }: { text: string; legacyEn?: string | null }) {
+  const { rest } = parsePrefix(text);
+  const { jp, en } = splitJpEn(rest);
+  const displayEn = en ?? legacyEn ?? null;
+  return (
+    <Td>
+      <span className="text-[var(--text)]">{jp}</span>
+      {displayEn && (
+        <span className="block text-[11px] text-[var(--text-muted)] mt-0.5 italic">{displayEn}</span>
+      )}
+    </Td>
+  );
+}
+
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -604,25 +626,41 @@ export default function MOMPage({ params }: { params: { id: string } }) {
   const isLoading = status === 'loading';
   const meeting   = (currentMOM as any)?.meeting;
 
-  // Categorise key points
-  const AGENDA_PFX     = ['[Agenda]',    '[EN Agenda]',    '[議題]'];
-  const DISCUSSION_PFX = ['[Discussion]','[EN Discussion]','[議論]'];
-  const DECISION_PFX   = ['[Decision]',  '[EN Decision]',  '[決定]'];
-  const RISK_PFX       = ['[Risk]',      '[EN Risk]',      '[リスク]'];
+  // Categorise key points.
+  // New MOMs: JP and EN paired inline as "[議題] jp\n[EN] en" — KeyPointCell splits them.
+  // Old MOMs: JP and EN stored as separate rows with [EN Agenda] etc. prefixes.
+  //           We collect the legacy EN rows by category and pair them by index with JP rows.
+  const AGENDA_PFX     = ['[Agenda]',    '[議題]'];
+  const DISCUSSION_PFX = ['[Discussion]','[議論]'];
+  const DECISION_PFX   = ['[Decision]',  '[決定]'];
+  const RISK_PFX       = ['[Risk]',      '[リスク]'];
+  const LEGACY_EN_PFX  = ['[EN Agenda]', '[EN Discussion]', '[EN Decision]', '[EN Risk]'];
 
   const keyPoints      = (currentMOM?.keyPoints ?? []) as KeyPoint[];
   const agendaPoints   = keyPoints.filter((kp) => AGENDA_PFX.some((p) => kp.point_text.startsWith(p)));
   const discussionPts  = keyPoints.filter((kp) => DISCUSSION_PFX.some((p) => kp.point_text.startsWith(p)));
   const decisionPoints = keyPoints.filter((kp) => DECISION_PFX.some((p) => kp.point_text.startsWith(p)));
   const riskPoints     = keyPoints.filter((kp) => RISK_PFX.some((p) => kp.point_text.startsWith(p)));
+
+  // Legacy separate EN rows — used to provide translations for old MOMs
+  const legacyEnAgenda     = keyPoints.filter((kp) => kp.point_text.startsWith('[EN Agenda]'));
+  const legacyEnDiscussion = keyPoints.filter((kp) => kp.point_text.startsWith('[EN Discussion]'));
+  const legacyEnDecision   = keyPoints.filter((kp) => kp.point_text.startsWith('[EN Decision]'));
+
   const otherPoints    = keyPoints.filter((kp) =>
-    ![...AGENDA_PFX, ...DISCUSSION_PFX, ...DECISION_PFX, ...RISK_PFX].some((p) => kp.point_text.startsWith(p))
+    ![...AGENDA_PFX, ...DISCUSSION_PFX, ...DECISION_PFX, ...RISK_PFX, ...LEGACY_EN_PFX].some((p) => kp.point_text.startsWith(p))
   );
 
-  // Agenda + Discussion merged rows
+  // Agenda + Discussion merged rows — carry legacy EN text by index for old MOMs
   const agendaDiscRows = [
-    ...agendaPoints.map((kp) => ({ ...kp, type: 'agenda' as const })),
-    ...discussionPts.map((kp) => ({ ...kp, type: 'discussion' as const })),
+    ...agendaPoints.map((kp, i) => ({
+      ...kp, type: 'agenda' as const,
+      legacyEn: legacyEnAgenda[i] ? parsePrefix(legacyEnAgenda[i].point_text).rest : null,
+    })),
+    ...discussionPts.map((kp, i) => ({
+      ...kp, type: 'discussion' as const,
+      legacyEn: legacyEnDiscussion[i] ? parsePrefix(legacyEnDiscussion[i].point_text).rest : null,
+    })),
   ];
 
   // Meeting attendees
@@ -846,7 +884,6 @@ export default function MOMPage({ params }: { params: { id: string } }) {
                       </thead>
                       <tbody>
                         {agendaDiscRows.map((kp, i) => {
-                          const { rest } = parsePrefix(kp.point_text);
                           const isAgenda = kp.type === 'agenda';
                           return (
                             <tr key={kp.id} className="hover:bg-[var(--bg)] transition-colors">
@@ -862,7 +899,7 @@ export default function MOMPage({ params }: { params: { id: string } }) {
                                   {isAgenda ? 'Agenda' : 'Discussion'}
                                 </span>
                               </Td>
-                              <Td>{rest}</Td>
+                              <KeyPointCell text={kp.point_text} legacyEn={(kp as any).legacyEn} />
                               <Td>
                                 <StatusBadge status={isAgenda ? 'discussed' : 'discussed'} />
                               </Td>
@@ -891,11 +928,11 @@ export default function MOMPage({ params }: { params: { id: string } }) {
                       </thead>
                       <tbody>
                         {decisionPoints.map((kp, i) => {
-                          const { rest } = parsePrefix(kp.point_text);
+                          const legacyEn = legacyEnDecision[i] ? parsePrefix(legacyEnDecision[i].point_text).rest : null;
                           return (
                             <tr key={kp.id} className="hover:bg-[var(--bg)] transition-colors">
                               <Td className="text-[var(--primary-deep)] font-bold font-mono text-[12px]">D{i + 1}</Td>
-                              <Td className="font-medium">{rest}</Td>
+                              <KeyPointCell text={kp.point_text} legacyEn={legacyEn} />
                               <Td><StatusBadge status="resolved" /></Td>
                             </tr>
                           );

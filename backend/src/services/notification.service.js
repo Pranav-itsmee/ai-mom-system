@@ -26,7 +26,7 @@ async function createNotification(userId, type, title, message, { taskId, meetin
  */
 async function sendDeadlineReminders() {
   try {
-    const { Task } = require('../models');
+    const { Task, MOM } = require('../models');
 
     const now      = new Date();
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -39,15 +39,17 @@ async function sendDeadlineReminders() {
         status:      { [Op.ne]: 'completed' },
         deadline:    { [Op.between]: [todayStr, tomorrowStr] },
       },
+      include: [{ model: MOM, attributes: ['meeting_id'] }],
     });
 
     for (const task of tasks) {
+      const meetingId = task.MOM?.meeting_id ?? null;
       await createNotification(
         task.assignee_id,
         'task_deadline',
         'Task deadline approaching',
         `"${task.title}" is due on ${task.deadline}`,
-        { taskId: task.id }
+        { taskId: task.id, meetingId }
       );
     }
 

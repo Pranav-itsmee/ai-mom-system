@@ -48,10 +48,12 @@ export default function Sidebar() {
         ].join(' ')}
       >
         {/* Logo mark */}
-        <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center shrink-0"
-             style={{ boxShadow: 'var(--shadow-sm)' }}>
-          <span className="text-[var(--text)] text-base select-none">🧠</span>
-        </div>
+        <img
+          src="/logo.png"
+          alt="AI MOM"
+          className="shrink-0 rounded-full"
+          style={{ width: 44, height: 44, objectFit: 'cover' }}
+        />
 
         {/* Title — hidden on desktop collapsed */}
         <div className={[

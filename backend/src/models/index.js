@@ -45,6 +45,10 @@ MeetingAttendee.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications', onDelete: 'CASCADE' });
 Notification.belongsTo(User, { foreignKey: 'user_id' });
 
+// ── Notification ↔ Task (for resolving meeting_id via task → MOM) ──────────
+Notification.belongsTo(Task, { foreignKey: 'task_id', constraints: false });
+Task.hasMany(Notification, { foreignKey: 'task_id', constraints: false });
+
 // ── MOM ↔ MOMVersion ───────────────────────────────────────────────────────
 MOM.hasMany(MOMVersion, { foreignKey: 'mom_id', as: 'versions', onDelete: 'CASCADE' });
 MOMVersion.belongsTo(MOM, { foreignKey: 'mom_id' });

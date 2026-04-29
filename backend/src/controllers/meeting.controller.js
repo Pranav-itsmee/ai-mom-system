@@ -87,11 +87,9 @@ async function listMeetings(req, res, next) {
       if (to) where.scheduled_at[Op.lte] = new Date(to);
     }
 
-    // Non-admins only see meetings they are part of (attendee, organiser, creator, or task-assigned)
-    if (req.user.role !== 'admin') {
-      const ids = await accessibleMeetingIds(req.user.id);
-      where.id = ids.length ? { [Op.in]: ids } : { [Op.in]: [-1] };
-    }
+    // All users (including admin) only see their own meetings
+    const ids = await accessibleMeetingIds(req.user.id);
+    where.id = ids.length ? { [Op.in]: ids } : { [Op.in]: [-1] };
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 

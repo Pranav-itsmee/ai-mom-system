@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const Notification = require('../models/Notification');
+const { Task, MOM } = require('../models');
 
 /** GET /notifications — returns unread first, capped at 30 */
 async function listNotifications(req, res, next) {
@@ -11,9 +12,30 @@ async function listNotifications(req, res, next) {
         ['created_at', 'DESC'],
       ],
       limit: 30,
+      include: [{
+        model: Task,
+        attributes: ['id', 'mom_id'],
+        required: false,
+        include: [{
+          model: MOM,
+          attributes: ['meeting_id'],
+          required: false,
+        }],
+      }],
     });
-    const unreadCount = items.filter((n) => !n.is_read).length;
-    res.json({ notifications: items, unreadCount });
+
+    // Resolve meeting_id via task → MOM when not stored directly on the notification
+    const notifications = items.map((n) => {
+      const plain = n.toJSON();
+      if (!plain.meeting_id && plain.Task?.MOM?.meeting_id) {
+        plain.meeting_id = plain.Task.MOM.meeting_id;
+      }
+      delete plain.Task;
+      return plain;
+    });
+
+    const unreadCount = notifications.filter((n) => !n.is_read).length;
+    res.json({ notifications, unreadCount });
   } catch (err) {
     next(err);
   }
