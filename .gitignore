@@ -60,3 +60,4 @@ desktop.ini
 # ── Lock files (keep package-lock, ignore yarn/pnpm) ─────────────────────────
 yarn.lock
 pnpm-lock.yaml
+electron-app/dist/
