@@ -1,0 +1,358 @@
+/* AI MOM Desktop — Tray Popup Styles */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --primary:       #00C9A7;
+  --primary-deep:  #00A88D;
+  --danger:        #FF6B6B;
+  --warning:       #FFB347;
+  --bg:            #0F172A;
+  --surface:       #1E293B;
+  --surface-2:     #273549;
+  --border:        #334155;
+  --text:          #F1F5F9;
+  --text-muted:    #94A3B8;
+  --text-light:    #64748B;
+  --radius:        10px;
+  --radius-sm:     6px;
+}
+
+html, body {
+  width:  400px;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Screen layout ── */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+.screen.hidden { display: none !important; }
+
+/* ── Logo row ── */
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.app-name    { font-size: 18px; font-weight: 700; color: var(--text); }
+.app-subtitle { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+/* ── Form ── */
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+
+.form-group label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.form-group input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.form-group input:focus { border-color: var(--primary); }
+.form-group input::placeholder { color: var(--text-light); }
+
+.error-msg {
+  font-size: 12px;
+  color: var(--danger);
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-light);
+  text-align: center;
+}
+
+/* ── Buttons ── */
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-link {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: opacity 0.15s, transform 0.1s;
+  text-align: center;
+}
+
+.btn-primary   { background: var(--primary);  color: #0F172A; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-danger    { background: var(--danger);    color: #fff; }
+.btn-link      { background: transparent; color: var(--text-muted); font-weight: 400; }
+
+.btn-primary:hover   { opacity: 0.9; }
+.btn-secondary:hover { background: #2E3E52; }
+.btn-danger:hover    { opacity: 0.9; }
+.btn-link:hover      { color: var(--text); }
+
+.btn-primary:active,
+.btn-secondary:active,
+.btn-danger:active { transform: scale(0.98); }
+
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-icon:hover { color: var(--text); background: var(--surface-2); }
+
+/* ── Divider ── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+
+/* ── Idle screen ── */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-idle      { background: var(--primary); }
+.dot-recording { background: var(--danger); animation: pulse 1.2s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
+.status-row > div { flex: 1; }
+.status-label  { font-size: 14px; font-weight: 600; color: var(--text); }
+.status-sub    { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.info-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.info-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 5px;
+}
+
+.info-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.detect-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detect-list li {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.last-meeting {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.last-label { font-size: 10px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+.last-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.last-date  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Recording screen ── */
+.rec-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.rec-label { font-size: 13px; font-weight: 700; color: var(--danger); }
+
+.rec-timer {
+  font-size: 42px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.rec-meeting {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  text-align: center;
+}
+
+.rec-platform { font-size: 11px; color: var(--primary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+.rec-title    { font-size: 14px; color: var(--text); font-weight: 600; }
+
+.rec-hint { font-size: 11px; color: var(--text-light); text-align: center; line-height: 1.4; }
+
+/* ── Uploading screen ── */
+.upload-icon {
+  font-size: 36px;
+  text-align: center;
+  color: var(--primary);
+  margin: 16px 0 8px;
+}
+
+.upload-label {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+}
+
+.progress-bar {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.upload-sub { font-size: 11px; color: var(--text-light); text-align: center; }
+
+/* ── Done screen ── */
+.done-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(0, 201, 167, 0.15);
+  border: 2px solid var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--primary);
+  margin: 12px auto 0;
+}
+
+.done-label { font-size: 16px; font-weight: 700; text-align: center; color: var(--text); }
+.done-sub   { font-size: 13px; text-align: center; color: var(--primary); font-weight: 600; }
+.done-hint  { font-size: 11px; text-align: center; color: var(--text-light); line-height: 1.4; }
+
+/* ── Error screen ── */
+.error-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 107, 107, 0.15);
+  border: 2px solid var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--danger);
+  margin: 12px auto 0;
+}
+
+.error-label  { font-size: 16px; font-weight: 700; text-align: center; color: var(--text); }
+.error-detail { font-size: 12px; text-align: center; color: var(--text-muted); line-height: 1.5; }
+
+/* ── Settings screen ── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.settings-header h2 { font-size: 16px; font-weight: 700; }
+
+.settings-user {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}

@@ -9,7 +9,6 @@ const logger = require('../utils/logger');
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ANTHROPIC_BASE = 'https://api.anthropic.com/v1';
-const OPENAI_BASE    = 'https://api.openai.com/v1';
 const MODEL          = 'claude-sonnet-4-6';
 
 const CLAUDE_HEADERS = () => ({
@@ -17,6 +16,27 @@ const CLAUDE_HEADERS = () => ({
   'anthropic-version': '2023-06-01',
   'Content-Type':      'application/json',
 });
+
+function describeError(err) {
+  if (!err) return 'Unknown error';
+  if (err.response) {
+    const body = typeof err.response.data === 'string'
+      ? err.response.data
+      : JSON.stringify(err.response.data ?? {});
+    return `${err.message || 'HTTP error'} — HTTP ${err.response.status}: ${body}`;
+  }
+  if (err.code || err.errno || err.syscall) {
+    return [
+      err.message,
+      err.code && `code=${err.code}`,
+      err.errno && `errno=${err.errno}`,
+      err.syscall && `syscall=${err.syscall}`,
+      err.address && `address=${err.address}`,
+      err.port && `port=${err.port}`,
+    ].filter(Boolean).join(' ');
+  }
+  return err.message || String(err);
+}
 
 // ─── MOM Prompts ──────────────────────────────────────────────────────────────
 
@@ -159,41 +179,44 @@ function detectLanguage(whisperLang, transcript) {
  * @param {string} audioPath
  * @returns {Promise<{ transcript: string, whisperLang: string }>}
  */
-async function transcribeAudio(audioPath) {
-  const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
-  const useLocal   = !!process.env.WHISPER_URL;
-  const backend    = useLocal ? 'local' : 'OpenAI';
-  logger.info(`[Pipeline] [2/4] Whisper (${backend}): transcribing ${fileSizeMB} MB audio…`);
-  const t0 = Date.now();
+async function postWhisperRequest({ url, headers, form, backend }) {
+  try {
+    return await axios.post(url, form, {
+      headers,
+      maxBodyLength:    Infinity,
+      maxContentLength: Infinity,
+      timeout:          600_000, // local processing can take longer than cloud
+    });
+  } catch (err) {
+    throw new Error(`Whisper ${backend} failed: ${describeError(err)}`);
+  }
+}
 
+function createWhisperForm(audioPath) {
   const form = new FormData();
   form.append('file', fs.createReadStream(audioPath), {
     filename:    require('path').basename(audioPath),
     contentType: 'audio/mpeg',
   });
+  return form;
+}
 
-  let url, headers;
-  if (useLocal) {
-    url     = `${process.env.WHISPER_URL}/transcribe`;
-    headers = { ...form.getHeaders() };
-  } else {
-    url     = `${OPENAI_BASE}/audio/transcriptions`;
-    headers = { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() };
-    form.append('model', 'whisper-1');
-    form.append('response_format', 'verbose_json');
+async function transcribeAudio(audioPath) {
+  const fileSizeMB = (fs.statSync(audioPath).size / 1024 / 1024).toFixed(1);
+  const whisperUrl = process.env.WHISPER_URL?.trim();
+  if (!whisperUrl) {
+    throw new Error('Local Whisper is required: WHISPER_URL is not configured');
   }
 
-  const res = await axios.post(url, form, {
-    headers,
-    maxBodyLength:    Infinity,
-    maxContentLength: Infinity,
-    timeout:          600_000, // local processing can take longer than cloud
-  }).catch((err) => {
-    if (err.response) {
-      const body = JSON.stringify(err.response.data ?? {});
-      throw new Error(`Whisper ${backend} ${err.response.status}: ${body}`);
-    }
-    throw err;
+  logger.info(`[Pipeline] [2/4] Whisper (local): transcribing ${fileSizeMB} MB audio…`);
+  const t0 = Date.now();
+
+  const form = createWhisperForm(audioPath);
+  const res = await postWhisperRequest({
+    url: `${whisperUrl.replace(/\/$/, '')}/transcribe`,
+    headers: { ...form.getHeaders() },
+    form,
+    backend: 'local',
   });
 
   const transcript  = res.data.text ?? '';
@@ -423,6 +446,11 @@ async function generateMOM(meetingId, audioPath) {
   try {
     // Step 2 — transcribe + detect language
     const { transcript, whisperLang } = await transcribeAudio(audioPath);
+    if (!transcript.trim()) {
+      throw new Error(
+        'Local Whisper returned an empty transcript. The recording likely contains no captured speech/audio, or Whisper VAD removed it as silence.',
+      );
+    }
     const language = detectLanguage(whisperLang, transcript);
     logger.info(`[Pipeline] Language detected: ${language} (Whisper: "${whisperLang}")`);
 

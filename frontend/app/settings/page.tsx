@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import Link from 'next/link';
-import { ChevronRight, UserCircle, Globe, CheckCircle, XCircle, UserPlus, Trash2, X } from 'lucide-react';
+import { ChevronRight, UserCircle, Globe, CheckCircle, XCircle, UserPlus, Trash2, X, Monitor, Apple, Download } from 'lucide-react';
 import { AppDispatch, RootState } from '@/store';
 import { setTheme, setLanguage } from '@/store/slices/uiSlice';
 import ProtectedLayout from '@/components/layout/ProtectedLayout';
@@ -243,6 +243,41 @@ function SettingsContent() {
               Each user connects their own Google account. Your calendar data is private and only visible to you.
             </p>
           )}
+        </section>
+
+        {/* Desktop App Download */}
+        <section className="card space-y-3">
+          <h2 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+            Desktop Recording App
+          </h2>
+          <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
+            Install the AI MOM desktop app to automatically record meetings from
+            Google Meet, Microsoft Teams, and Zoom — no clicks needed.
+            It runs in your system tray and detects meetings automatically.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`${API_BASE}/download/windows`}
+              className="flex items-center gap-1.5 px-3 py-2 bg-[var(--primary)] text-white
+                         rounded-lg text-[12px] font-semibold hover:opacity-90 transition-opacity no-underline"
+              download
+            >
+              <Monitor size={13} />
+              Download for Windows (.exe)
+            </a>
+            <a
+              href={`${API_BASE}/download/mac`}
+              className="flex items-center gap-1.5 px-3 py-2 border border-[var(--border)] text-[var(--text)]
+                         rounded-lg text-[12px] font-semibold hover:border-[var(--primary)] transition-colors no-underline"
+              download
+            >
+              <Apple size={13} />
+              Download for macOS (.dmg)
+            </a>
+          </div>
+          <p className="text-[11px] text-[var(--text-light)]">
+            One-time install. Sign in with your AI MOM credentials inside the app.
+          </p>
         </section>
 
         {user?.role === 'admin' && (

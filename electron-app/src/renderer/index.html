@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *;" />
+  <title>AI MOM</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Login Screen ───────────────────────────────────────────────── -->
+  <div id="screen-login" class="screen hidden">
+    <div class="logo-row">
+      <img src="../assets/icon.png" alt="AI MOM" class="logo" onerror="this.style.display='none'" />
+      <div>
+        <h1 class="app-name">AI MOM</h1>
+        <p class="app-subtitle">Meeting Recording</p>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="server-url">Server URL</label>
+      <input type="url" id="server-url" placeholder="http://localhost:5000/api/v1"
+             autocomplete="off" spellcheck="false" />
+    </div>
+
+    <div class="form-group">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="you@company.com" autocomplete="email" />
+    </div>
+
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+
+    <div id="login-error" class="error-msg hidden"></div>
+
+    <button id="btn-login" class="btn-primary">Sign In</button>
+    <p class="hint">Your credentials are stored encrypted on this device.</p>
+  </div>
+
+  <!-- ── Idle Screen ────────────────────────────────────────────────── -->
+  <div id="screen-idle" class="screen hidden">
+    <div class="status-row">
+      <div class="status-dot dot-idle"></div>
+      <div>
+        <p class="status-label">Ready to record</p>
+        <p class="status-sub" id="idle-user"></p>
+      </div>
+      <button class="btn-icon" id="btn-settings" title="Settings">⚙</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="info-card">
+      <p class="info-title">Auto-Detection Active</p>
+      <p class="info-text">AI MOM will automatically start recording when it detects:</p>
+      <ul class="detect-list">
+        <li>📹 Google Meet (any browser)</li>
+        <li>💼 Microsoft Teams desktop</li>
+        <li>🎙 Zoom desktop</li>
+      </ul>
+    </div>
+
+    <div id="last-meeting" class="last-meeting hidden">
+      <p class="last-label">Last recording</p>
+      <p class="last-title" id="last-meeting-title"></p>
+      <p class="last-date" id="last-meeting-date"></p>
+    </div>
+
+    <button id="btn-open-web" class="btn-secondary">Open Web App</button>
+  </div>
+
+  <!-- ── Recording Screen ───────────────────────────────────────────── -->
+  <div id="screen-recording" class="screen hidden">
+    <div class="rec-header">
+      <span class="rec-dot"></span>
+      <span class="rec-label">Recording</span>
+    </div>
+
+    <p class="rec-timer" id="rec-timer">00:00</p>
+
+    <div class="rec-meeting">
+      <p class="rec-platform" id="rec-platform"></p>
+      <p class="rec-title" id="rec-title"></p>
+    </div>
+
+    <p class="rec-hint">Recording will stop automatically when the meeting ends.</p>
+
+    <button id="btn-stop" class="btn-danger">Stop &amp; Upload Now</button>
+  </div>
+
+  <!-- ── Uploading Screen ───────────────────────────────────────────── -->
+  <div id="screen-uploading" class="screen hidden">
+    <div class="upload-icon">⬆</div>
+    <p class="upload-label">Uploading recording…</p>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+    </div>
+    <p class="progress-text" id="progress-text">0%</p>
+    <p class="upload-sub">MOM generation will start automatically.</p>
+  </div>
+
+  <!-- ── Done Screen ────────────────────────────────────────────────── -->
+  <div id="screen-done" class="screen hidden">
+    <div class="done-icon">✓</div>
+    <p class="done-label">Recording Uploaded!</p>
+    <p class="done-sub" id="done-title"></p>
+    <p class="done-hint">MOM is being generated. Check the web app for results.</p>
+    <button id="btn-view-mom" class="btn-primary">View in Web App</button>
+    <button id="btn-done-dismiss" class="btn-secondary">Dismiss</button>
+  </div>
+
+  <!-- ── Error Screen ───────────────────────────────────────────────── -->
+  <div id="screen-error" class="screen hidden">
+    <div class="error-icon">!</div>
+    <p class="error-label">Something went wrong</p>
+    <p class="error-detail" id="error-detail"></p>
+    <button id="btn-error-retry" class="btn-secondary">Try Again</button>
+    <button id="btn-error-dismiss" class="btn-link">Dismiss</button>
+  </div>
+
+  <!-- ── Settings Overlay ───────────────────────────────────────────── -->
+  <div id="screen-settings" class="screen hidden">
+    <div class="settings-header">
+      <h2>Settings</h2>
+      <button class="btn-icon" id="btn-settings-close">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label>Server URL</label>
+      <input type="url" id="settings-server-url" placeholder="http://localhost:5000/api/v1"
+             autocomplete="off" spellcheck="false" />
+    </div>
+
+    <div class="form-group">
+      <label>Signed in as</label>
+      <p class="settings-user" id="settings-user-email"></p>
+    </div>
+
+    <button id="btn-save-settings" class="btn-primary">Save</button>
+    <button id="btn-signout" class="btn-danger">Sign Out</button>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

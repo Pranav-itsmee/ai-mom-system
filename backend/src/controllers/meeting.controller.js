@@ -3,6 +3,12 @@ const { Meeting, User, MOM, MOMKeyPoint, Task, MeetingAttendee } = require('../m
 const logger = require('../utils/logger');
 const { getMeetingAccessLevel, accessibleMeetingIds } = require('../utils/meetingAccess');
 
+function describeError(err) {
+  if (!err) return 'Unknown error';
+  if (err.stack) return err.stack;
+  return err.message || String(err);
+}
+
 function normalizeMeetCode(meetLink) {
   if (!meetLink) return null;
   const match = String(meetLink).match(/meet\.google\.com\/([a-z0-9-]+)/i);
@@ -389,7 +395,7 @@ async function uploadMeeting(req, res, next) {
     claudeService.generateMOM(meeting.id, audioPath)
       .then(() => logger.info(`━━━ AI PIPELINE DONE ━━━ meeting #${meeting.id} → completed ✓`))
       .catch(async (err) => {
-        logger.error(`━━━ AI PIPELINE FAILED ━━━ meeting #${meeting.id}: ${err.message}`);
+        logger.error(`━━━ AI PIPELINE FAILED ━━━ meeting #${meeting.id}: ${describeError(err)}`);
         await meeting.update({ status: 'failed' }).catch(() => {});
       });
 
@@ -513,7 +519,7 @@ async function retryPipeline(req, res, next) {
     require('../services/claude.service')
       .generateMOM(meeting.id, meeting.audio_path)
       .catch((err) => {
-        logger.error(`Retry pipeline failed for meeting ${meeting.id}: ${err.message}`);
+        logger.error(`Retry pipeline failed for meeting ${meeting.id}: ${describeError(err)}`);
         meeting.update({ status: 'failed' }).catch(() => {});
       });
 
