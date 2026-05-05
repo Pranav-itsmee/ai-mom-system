@@ -46,6 +46,11 @@ let noMeetingTicks  = 0;    // consecutive ticks with no meeting window seen
 const CONFIRM_TICKS = 2;   // require 2 consecutive detections (~6s) before starting
 const END_TICKS     = 3;   // require 3 consecutive absences (~9s) before stopping — handles Zoom window transitions
 
+// Returns true for generic fallback titles that carry no meeting-specific info
+function isGenericTitle(title) {
+  return /^(zoom (meeting|webinar)|zoom workplace|google meet|teams meeting|meet|[a-z]{3}-[a-z]{4}-[a-z]{3})$/i.test((title ?? '').trim());
+}
+
 // ── Meeting detection ─────────────────────────────────────────────────────────
 async function detectMeeting() {
   try {
@@ -81,8 +86,16 @@ async function detectMeeting() {
         } else {
           console.log(`[AIMOM] Meeting candidate tick ${pendingTicks}/${CONFIRM_TICKS}`);
         }
+      } else {
+        // Meeting still in progress — upgrade title if a better (non-generic) one appears
+        if (found.title !== activeMeeting.title &&
+            isGenericTitle(activeMeeting.title) &&
+            !isGenericTitle(found.title)) {
+          console.log(`[AIMOM] Title upgraded: "${activeMeeting.title}" → "${found.title}"`);
+          activeMeeting = { ...activeMeeting, ...found };
+          mainWindow?.webContents?.send('meeting:update', { title: found.title, platform: found.platform });
+        }
       }
-      // else: activeMeeting already set — meeting still in progress, nothing to do
 
     } else {
       // No meeting window visible this tick
@@ -279,6 +292,16 @@ function registerIPC() {
     activeMeeting = null;
     setTrayStatus('idle');
     tray?.setContextMenu(buildMenu());
+  });
+  // Probe failed (pre-join / idle window) — reset so next real window can be detected
+  ipcMain.on('probe-cancelled', () => {
+    activeMeeting  = null;
+    pendingMeeting = null;
+    pendingTicks   = 0;
+    noMeetingTicks = 0;
+    setTrayStatus('idle');
+    tray?.setContextMenu(buildMenu());
+    console.log('[AIMOM] Probe cancelled — reset detection state');
   });
   ipcMain.on('window-hide', () => mainWindow?.hide());
 }

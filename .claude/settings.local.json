@@ -24,7 +24,8 @@
       "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'mysql|mariadb|xampp|wamp|laragon' })",
       "Bash(mysql -u root -pPranav@2003 ai_mom_db -e \"SELECT id, title, status FROM meetings ORDER BY id;\")",
       "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"SELECT id, title, status FROM meetings ORDER BY id;\")",
-      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"DELETE FROM meetings WHERE status != 'completed'; SELECT ROW_COUNT\\(\\) AS deleted_rows;\")"
+      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"DELETE FROM meetings WHERE status != 'completed'; SELECT ROW_COUNT\\(\\) AS deleted_rows;\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"DELETE FROM meetings WHERE status != 'completed'; SELECT ROW_COUNT\\(\\) AS deleted;\")"
     ]
   }
 }

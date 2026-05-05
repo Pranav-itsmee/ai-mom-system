@@ -48,9 +48,13 @@ function isEndedMeetingWindow(windowName) {
 
 function isZoomMeetingWindow(name, noBrowser) {
   if (!/\bzoom\b/i.test(name)) return false;
-  if (/^zoom(?: workplace)?$/i.test(noBrowser)) return false;
+  if (/^zoom$/i.test(noBrowser)) return false; // bare "Zoom" app = idle
   if (ZOOM_NOT_JOINED_RE.test(noBrowser)) return false;
   if (ZOOM_IDLE_AREA_RE.test(noBrowser)) return false;
+
+  // Zoom Workplace main window \u2014 may host an active integrated meeting.
+  // Audio probe in renderer validates whether a real meeting is in progress.
+  if (/^zoom\s+workplace$/i.test(noBrowser)) return true;
 
   // Standalone Zoom desktop app \u2014 must end with "Zoom Meeting" or "Zoom Webinar"
   if (/\bzoom\s+(meeting|webinar)\s*$/i.test(noBrowser)) return true;
@@ -173,7 +177,8 @@ function extractMeetingTitle(windowName, platformHint) {
   if (platformHint === 'Zoom' || /\bZoom\b/i.test(noBrowser)) {
     const title = noBrowser
       .replace(/\s*[-\u2013\u2014|]\s*Zoom(?: Workplace)?$/i, '')
-      .replace(/^Zoom\s*[-\u2013\u2014]\s*/i, '')
+      .replace(/^Zoom\s*(?:Workplace\s*)?[-\u2013\u2014]\s*/i, '')
+      .replace(/^zoom\s+workplace$/i, '') // bare "Zoom Workplace" \u2192 generic title
       .trim();
     if (/webinar/i.test(noBrowser)) return title || 'Zoom Webinar';
     return title || 'Zoom Meeting';

@@ -12,6 +12,8 @@ const positives = [
   ['Zoom Meeting', 'Zoom', 'Zoom Meeting'],
   ['Zoom Webinar - Google Chrome', 'Zoom'],
   ['Weekly planning - Zoom Workplace', 'Zoom', 'Weekly planning'],
+  // Zoom Workplace main window — detected, audio probe validates if meeting is active
+  ['Zoom Workplace', 'Zoom', 'Zoom Meeting'],
   ['Cisco Webex Meeting - Edge', 'Webex'],
   ['Jitsi Meet - Mozilla Firefox', 'Jitsi Meet'],
   ['GoToMeeting session - Chrome', 'GoTo Meeting'],
@@ -28,8 +30,6 @@ const negatives = [
   'Google Meet - Chrome',
   'Zoom',
   'Zoom - Google Chrome',
-  'Zoom Workplace',
-  'Zoom Workplace - Google Chrome',
   'Zoom Meetings - Google Chrome',
   'Team Chat - Zoom Workplace',
   'Join Meeting - Zoom Workplace',
