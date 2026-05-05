@@ -20,55 +20,6 @@ function initStore() {
   }
 }
 
-// ── Meeting detection patterns ────────────────────────────────────────────────
-// Google Meet window titles by browser:
-//   Chrome / Edge / Brave / Opera : "Meet - Title - BrowserName"   (hyphen)
-//   Firefox                        : "Meet - Title — Mozilla Firefox"  (em dash U+2014)
-//   Popped-out window              : "Meet - abc-defg-hij"  (no browser suffix)
-const MEETING_PATTERNS = [
-  // Zoom desktop
-  { re: /^Zoom Meeting$/i,                           platform: 'Zoom'        },
-  { re: /^Zoom Webinar$/i,                           platform: 'Zoom'        },
-
-  // Google Meet — Chrome, Edge, Brave, Opera (' - BrowserName' suffix)
-  { re: /^Meet - .+ - .+$/i,                         platform: 'Google Meet' },
-  // Google Meet — Firefox (' — Mozilla Firefox' suffix, em dash)
-  { re: /^Meet - .+ — .+$/i,                    platform: 'Google Meet' },
-  // Google Meet — popped-out window or browser that omits its own name
-  { re: /^Meet - [a-z]{3}-[a-z]{4}-[a-z]{3}$/i,     platform: 'Google Meet' },
-  // Google Meet — alternate title format used by some Meet versions
-  { re: /^.+ - Google Meet$/i,                       platform: 'Google Meet' },
-
-  // Microsoft Teams desktop
-  { re: /^Microsoft Teams.*(?:Call|Meeting)/i,       platform: 'Teams'       },
-  { re: /^.+ \| Microsoft Teams$/i,                  platform: 'Teams'       },
-  { re: /^Microsoft Teams - .+$/i,                   platform: 'Teams'       },
-
-  // Cisco Webex desktop
-  { re: /^Cisco Webex (Meeting|Webinar)/i,           platform: 'Webex'       },
-];
-
-function extractMeetingTitle(windowName) {
-  let m;
-
-  // Google Meet: strip the trailing browser name after the last ' - ' or ' — ' separator.
-  // Works for all browsers including Firefox (em dash) and titles that contain dashes.
-  if (windowName.startsWith('Meet - ')) {
-    const inner = windowName.slice(7); // remove leading "Meet - "
-    // Remove "BrowserName" suffix: everything after the last dash/en-dash/em-dash separator
-    const stripped = inner.replace(/\s+[–—-]\s+[^–—-]+$/, '').trim();
-    return stripped || inner.trim();
-  }
-
-  if ((m = windowName.match(/^(.+) - Google Meet$/i)))       return m[1].trim();
-  if ((m = windowName.match(/^(.+) \| Microsoft Teams$/i)))  return m[1].trim();
-  if ((m = windowName.match(/^Microsoft Teams - (.+)$/i)))   return m[1].trim();
-  if (/Zoom Webinar/i.test(windowName))                      return 'Zoom Webinar';
-  if (/Zoom Meeting/i.test(windowName))                      return 'Zoom Meeting';
-  if (/Cisco Webex/i.test(windowName))                       return 'Webex Meeting';
-  return windowName.trim();
-}
-
 // ── Fallback tray icon — teal 16×16 PNG encoded as data URL ──────────────────
 const FALLBACK_ICON =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9h' +
