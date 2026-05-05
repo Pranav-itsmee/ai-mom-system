@@ -27,9 +27,7 @@ const PLATFORM_CONFIG = {
     isInCall: () =>
       !!(document.querySelector('[data-tid="hangup-btn"]') ||
          document.querySelector('[data-tid="mute-button"]') ||
-         document.querySelector('[aria-label="Leave"]') ||
-         /\/(meet|meeting|call)\//.test(location.pathname) ||
-         location.search.includes('meetingjoin')),
+         document.querySelector('[aria-label="Leave"]')),
     getTitle: () =>
       document.querySelector('[data-tid="meet-page-header-title"]')?.textContent?.trim() ||
       document.querySelector('[class*="meeting-title"]')?.textContent?.trim() ||
@@ -43,10 +41,7 @@ const PLATFORM_CONFIG = {
 
   zoom: {
     label: 'Zoom',
-    // URL /wc/{id}/start (host) or /wc/{id}/join (participant) = actively in a meeting.
-    // DOM selectors are a fallback — Zoom's WebAssembly UI loads after document_idle.
     isInCall: () =>
-      /\/wc\/\d+\/(start|join)/.test(location.pathname) ||
       !!(document.querySelector('[aria-label="Leave"]') ||
          document.querySelector('[aria-label="End"]') ||
          document.querySelector('[aria-label="End Meeting"]') ||

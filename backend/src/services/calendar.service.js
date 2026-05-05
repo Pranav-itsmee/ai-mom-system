@@ -11,6 +11,15 @@ function normalizeMeetingTitle(title) {
     .toLowerCase();
 }
 
+const ONLINE_MEETING_LINK_RE = /https?:\/\/[^\s<>"']*(?:meet\.google\.com\/[a-z0-9-]+|zoom\.us\/(?:j|wc)\/\d+|teams\.microsoft\.com\/l\/meetup-join\/[^\s<>"']+|teams\.live\.com\/meet\/[^\s<>"']+)[^\s<>"']*/i;
+
+function cleanMeetingLink(link) {
+  return String(link || '')
+    .replace(/&amp;/g, '&')
+    .replace(/[)\].,;]+$/g, '')
+    .trim();
+}
+
 // Derive a readable name from an email address when no displayName is available
 // e.g. "pranav.itsmee.official@gmail.com" → "Pranav Itsmee Official"
 function nameFromEmail(email) {
@@ -92,7 +101,7 @@ async function fetchProfileName(auth, email) {
 
 /**
  * Fetch all Google Calendar events for the next 24 hours that have a
- * Google Meet conference link attached.
+ * Meet, Zoom, or Teams conference link attached.
  */
 async function fetchUpcomingEvents() {
   const auth = getAuthenticatedClient();
@@ -110,17 +119,26 @@ async function fetchUpcomingEvents() {
   });
 
   const events = res.data.items || [];
-  return events.filter((event) =>
-    event.conferenceData?.entryPoints?.some((ep) => ep.entryPointType === 'video')
-  );
+  return events.filter((event) => extractMeetLink(event));
 }
 
 /**
- * Extract the Google Meet video URL from a calendar event.
+ * Extract the online meeting URL from a calendar event.
+ * Google Calendar stores Google Meet links in conferenceData, while Zoom/Teams
+ * invites are often only present in location or description text.
  */
 function extractMeetLink(event) {
   const ep = event.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video');
-  return ep?.uri || null;
+  if (ep?.uri) return cleanMeetingLink(ep.uri);
+  if (event.hangoutLink) return cleanMeetingLink(event.hangoutLink);
+
+  const searchableText = [
+    event.location,
+    event.description,
+  ].filter(Boolean).join(' ');
+
+  const match = searchableText.match(ONLINE_MEETING_LINK_RE)?.[0];
+  return match ? cleanMeetingLink(match) : null;
 }
 
 /**
@@ -135,19 +153,18 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
   const auth   = authClient;
   const calendar = google.calendar({ version: 'v3', auth });
   const now = new Date();
+  const lookbackStart = new Date(now.getTime() - 12 * 60 * 60 * 1000);
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   const res = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: now.toISOString(),
+    timeMin: lookbackStart.toISOString(),
     timeMax: tomorrow.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
   });
 
-  const rawEvents = (res.data.items || []).filter((event) =>
-    event.conferenceData?.entryPoints?.some((ep) => ep.entryPointType === 'video')
-  );
+  const rawEvents = (res.data.items || []).filter((event) => extractMeetLink(event));
   const results = [];
 
   for (const event of rawEvents) {
@@ -156,6 +173,7 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
 
     const scheduledAt = new Date(event.start?.dateTime || event.start?.date);
     const title = event.summary || 'Untitled Meeting';
+    const eventLocation = event.location || null;
 
     // Resolve organizer from event.organizer
     let organizerId   = null;
@@ -178,6 +196,7 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
     if (existing) {
       const updates = {
         title, meet_link: meetLink, scheduled_at: scheduledAt,
+        location: eventLocation,
         organizer_name: organizerName, organizer_email: organizerEmail,
       };
       if (organizerId) updates.organizer_id = organizerId;
@@ -193,6 +212,7 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
           title,
           meet_link: meetLink,
           scheduled_at: scheduledAt,
+          location: eventLocation,
           organizer_name: organizerName,
           organizer_email: organizerEmail,
         };
@@ -208,6 +228,7 @@ async function syncMeetingsForAuth(authClient, syncUserId = null) {
         title,
         meet_link: meetLink,
         scheduled_at: scheduledAt,
+        location: eventLocation,
         status: 'scheduled',
         organizer_name:  organizerName,
         organizer_email: organizerEmail,

@@ -1,5 +1,9 @@
 const DASH_SEPARATOR = /\s+[-\u2013\u2014]\s+/;
 const MEET_CODE_RE = /\b[a-z]{3}-[a-z]{4}-[a-z]{3}\b/i;
+const ENDED_STATE_RE = /\b(you (left|have left|were removed)|meeting (ended|has ended|is over)|call (ended|has ended)|this (meeting|call) has ended|thank you for joining|return to home screen|rejoin|join again)\b/i;
+const ZOOM_NOT_JOINED_RE = /^(join|launch|start|schedule|new)\b.*\bmeeting\b/i;
+const ZOOM_IDLE_AREA_RE = /^(team chat|chat|meetings?|scheduler|calendar|contacts|mail|clips|whiteboards?|home|upcoming|notes?|starred|settings?|profile|admin)\s+[-\u2013\u2014|]\s+zoom(?: workplace)?$/i;
+const TEAMS_IDLE_TABS_RE = /^(activity|chat|teams|calendar|calls?|files?|apps?|dashboard|settings?)\s*[-\u2013\u2014|]\s*(?:microsoft\s+)?teams$/i;
 
 const BROWSER_SUFFIX_RE = new RegExp(
   String.raw`(?:\s+(?:[-\u2013\u2014]|\|)\s+)(?:` +
@@ -38,13 +42,64 @@ function stripTrailingPlatform(name, platformName) {
     .trim();
 }
 
+function isEndedMeetingWindow(windowName) {
+  return ENDED_STATE_RE.test(cleanWindowName(windowName));
+}
+
+function isZoomMeetingWindow(name, noBrowser) {
+  if (!/\bzoom\b/i.test(name)) return false;
+  if (/^zoom(?: workplace)?$/i.test(noBrowser)) return false;
+  if (ZOOM_NOT_JOINED_RE.test(noBrowser)) return false;
+  if (ZOOM_IDLE_AREA_RE.test(noBrowser)) return false;
+
+  // Standalone Zoom desktop app \u2014 must end with "Zoom Meeting" or "Zoom Webinar"
+  if (/\bzoom\s+(meeting|webinar)\s*$/i.test(noBrowser)) return true;
+
+  // Browser: "[topic] - Zoom" or "[topic] | Zoom" (non-navigation prefix)
+  if (/\b(meeting|webinar|conference|call)\s+[-\u2013\u2014|]\s+zoom(?: workplace)?$/i.test(noBrowser)) return true;
+
+  // Zoom Workplace desktop: "[topic] - Zoom Workplace" \u2014 has a non-generic prefix
+  if (/^.+\s+[-\u2013\u2014|]\s+zoom\s+workplace\s*$/i.test(noBrowser)) {
+    // Exclude if the prefix itself is a navigation area name
+    const prefix = noBrowser.replace(/\s+[-\u2013\u2014|]\s+zoom\s+workplace\s*$/i, '').trim();
+    if (ZOOM_IDLE_AREA_RE.test(`${prefix} - Zoom Workplace`)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function isTeamsMeetingWindow(name, noBrowser) {
+  if (!/\b(microsoft teams|teams)\b/i.test(name)) return false;
+  if (/^microsoft teams$/i.test(noBrowser) || /^teams$/i.test(noBrowser)) return false;
+  if (TEAMS_IDLE_TABS_RE.test(noBrowser)) return false;
+
+  // Require "Microsoft Teams" to be the app identifier — suffix or prefix with separator.
+  // This prevents random web pages that mention "Teams" and "meeting" from matching.
+  const hasSuffix = /\s+[-–—|]\s+(?:microsoft\s+)?teams\s*$/i.test(noBrowser);
+  const hasPrefix = /^microsoft\s+teams\s*[-–—]\s+/i.test(noBrowser);
+  // Teams web client in browser shows "Teams meeting in General" without the suffix
+  const hasBrowserMeetingPrefix = /^teams\s+meeting\b/i.test(noBrowser);
+
+  if (!hasSuffix && !hasPrefix && !hasBrowserMeetingPrefix) return false;
+
+  if (hasSuffix) {
+    // Strip the trailing "| Microsoft Teams" to examine only the content prefix
+    const prefix = noBrowser.replace(/\s+[-–—|]\s+(?:microsoft\s+)?teams\s*$/i, '').trim();
+    // Exclude chat/activity windows: "Chat | Contact Name | Microsoft Teams"
+    if (/^(chat|activity|calendar|files?|calls?|apps?)\s*[-–—|]/i.test(prefix)) return false;
+    return /\b(meeting|call|conference|webinar|live event)\b/i.test(prefix);
+  }
+
+  return /\b(meeting|call|conference|webinar|live event)\b/i.test(noBrowser);
+}
+
 function classifyMeetingWindow(windowName) {
   const name = cleanWindowName(windowName);
   if (!name) return null;
+  if (isEndedMeetingWindow(name)) return null;
 
-  const lower = name.toLowerCase();
   const noBrowser = stripBrowserSuffix(name);
-  const noBrowserLower = noBrowser.toLowerCase();
 
   if (
     /^meet\s*[-\u2013\u2014]\s+/i.test(name) ||
@@ -55,26 +110,11 @@ function classifyMeetingWindow(windowName) {
     return { platform: 'Google Meet', title: extractMeetingTitle(name, 'Google Meet') };
   }
 
-  if (
-    /\bzoom\b/i.test(name) &&
-    (
-      /\b(meeting|webinar|workplace|conference|call)\b/i.test(name) ||
-      /\bzoom\.us\b/i.test(lower) ||
-      /^zoom$/i.test(noBrowser)
-    )
-  ) {
+  if (isZoomMeetingWindow(name, noBrowser)) {
     return { platform: 'Zoom', title: extractMeetingTitle(name, 'Zoom') };
   }
 
-  if (
-    /\b(microsoft teams|teams)\b/i.test(name) &&
-    (
-      /\b(meeting|call|conference|webinar|live event)\b/i.test(name) ||
-      /\bteams\.microsoft\.com\b/i.test(lower) ||
-      /\|\s*microsoft teams$/i.test(name) ||
-      /^microsoft teams\b/i.test(noBrowser)
-    )
-  ) {
+  if (isTeamsMeetingWindow(name, noBrowser)) {
     return { platform: 'Teams', title: extractMeetingTitle(name, 'Teams') };
   }
 
@@ -158,5 +198,8 @@ module.exports = {
   classifyMeetingWindow,
   extractMeetingTitle,
   findMeetingSource,
+  isEndedMeetingWindow,
+  isTeamsMeetingWindow,
+  isZoomMeetingWindow,
   stripBrowserSuffix,
 };

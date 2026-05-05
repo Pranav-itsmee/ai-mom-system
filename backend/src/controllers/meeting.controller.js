@@ -15,16 +15,128 @@ function normalizeMeetCode(meetLink) {
   return match?.[1]?.toLowerCase() || null;
 }
 
+function normalizeMeetingLink(meetingLink) {
+  if (!meetingLink) return null;
+  const raw = String(meetingLink).trim();
+  if (!raw) return null;
+
+  const meetCode = normalizeMeetCode(raw);
+  if (meetCode) return `meet:${meetCode}`;
+
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+
+    if (host.endsWith('zoom.us')) {
+      const meetingId = path.match(/\/(?:j|wc)\/(\d+)/)?.[1];
+      if (meetingId) return `zoom:${meetingId}`;
+    }
+
+    if (host === 'teams.microsoft.com' || host.endsWith('.teams.microsoft.com') || host === 'teams.live.com') {
+      return `teams:${host}${decodeURIComponent(path)}`;
+    }
+
+    return `${host}${path}`;
+  } catch {
+    return raw.toLowerCase().replace(/[?#].*$/, '').replace(/\/+$/, '') || null;
+  }
+}
+
 function normalizeMeetingTitle(title) {
   return String(title || '')
     .replace(/^meet\s*-\s*/i, '')
+    .replace(/\s+(?:[-\u2013\u2014]|\|)\s+(google meet|microsoft teams|teams|zoom(?: workplace)?)$/i, '')
+    .replace(/^zoom\s*[-\u2013\u2014]\s*/i, '')
+    .replace(/^microsoft teams\s*[-\u2013\u2014]\s*/i, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 }
 
+function titleVariants(title) {
+  const normalized = normalizeMeetingTitle(title);
+  if (!normalized) return new Set();
+
+  const variants = new Set([normalized]);
+  const withoutTrailingKind = normalized
+    .replace(/\b(zoom|teams|google meet)\b/g, '')
+    .replace(/\s*\b(meeting|call|webinar|conference|live event)\b\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (withoutTrailingKind && withoutTrailingKind.length >= 4) variants.add(withoutTrailingKind);
+
+  const punctuationFolded = normalized.replace(/[^a-z0-9]+/gi, ' ').replace(/\s+/g, ' ').trim();
+  if (punctuationFolded) variants.add(punctuationFolded);
+
+  return variants;
+}
+
+function isGenericRecordingTitle(title) {
+  const normalized = normalizeMeetingTitle(title);
+  if (!normalized) return true;
+  return new Set([
+    'meeting',
+    'meeting recording',
+    'google meet',
+    'google meet recording',
+    'zoom',
+    'zoom meeting',
+    'zoom webinar',
+    'teams',
+    'teams meeting',
+    'microsoft teams',
+    'microsoft teams meeting',
+  ]).has(normalized);
+}
+
+function scoreTitleMatch(uploadTitle, scheduledTitle) {
+  if (isGenericRecordingTitle(uploadTitle)) return 0;
+
+  const uploadVariants = titleVariants(uploadTitle);
+  const scheduledVariants = titleVariants(scheduledTitle);
+  if (!uploadVariants.size || !scheduledVariants.size) return 0;
+
+  for (const variant of uploadVariants) {
+    if (scheduledVariants.has(variant)) return 100;
+  }
+
+  let best = 0;
+  for (const uploadVariant of uploadVariants) {
+    for (const scheduledVariant of scheduledVariants) {
+      if (uploadVariant.length < 4 || scheduledVariant.length < 4) continue;
+      if (uploadVariant.includes(scheduledVariant) || scheduledVariant.includes(uploadVariant)) {
+        best = Math.max(best, 85);
+      }
+      const uploadTokens = new Set(uploadVariant.split(/\s+/).filter((t) => t.length > 2));
+      const scheduledTokens = new Set(scheduledVariant.split(/\s+/).filter((t) => t.length > 2));
+      const intersection = [...uploadTokens].filter((t) => scheduledTokens.has(t)).length;
+      const union = new Set([...uploadTokens, ...scheduledTokens]).size;
+      if (union) best = Math.max(best, Math.round((intersection / union) * 100));
+    }
+  }
+
+  return best >= 70 ? best : 0;
+}
+
+async function refreshCurrentUserSchedule(userId) {
+  try {
+    const currentUser = await User.findByPk(userId, { attributes: ['id', 'google_refresh_token'] });
+    if (!currentUser?.google_refresh_token) return;
+
+    const calendarService = require('../services/calendar.service');
+    const { getOAuthClient } = require('../config/googleAuth');
+    const client = getOAuthClient();
+    client.setCredentials({ refresh_token: currentUser.google_refresh_token });
+    await calendarService.syncMeetingsForAuth(client, userId);
+  } catch (err) {
+    logger.warn(`Best-effort calendar refresh before recording match failed: ${err.message}`);
+  }
+}
+
 async function findMeetingForMeetLink(meetLink, scheduledAt = null) {
-  const meetCode = normalizeMeetCode(meetLink);
-  if (!meetCode) return null;
+  const normalizedLink = normalizeMeetingLink(meetLink);
+  if (!normalizedLink) return null;
 
   const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
   const validDate = !Number.isNaN(scheduledDate.getTime()) ? scheduledDate : new Date();
@@ -43,7 +155,7 @@ async function findMeetingForMeetLink(meetLink, scheduledAt = null) {
     ],
   });
 
-  const matches = candidates.filter((meeting) => normalizeMeetCode(meeting.meet_link) === meetCode);
+  const matches = candidates.filter((meeting) => normalizeMeetingLink(meeting.meet_link) === normalizedLink);
   const statusRank = { recording: 0, scheduled: 1, processing: 2 };
   matches.sort((a, b) => (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9));
   return matches[0] || null;
@@ -53,8 +165,7 @@ async function findMeetingForUpload({ meetLink, title, scheduledAt }) {
   const byMeetLink = await findMeetingForMeetLink(meetLink, scheduledAt);
   if (byMeetLink) return byMeetLink;
 
-  const normalizedTitle = normalizeMeetingTitle(title);
-  if (!normalizedTitle) return null;
+  if (isGenericRecordingTitle(title)) return null;
 
   const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
   const validDate = !Number.isNaN(scheduledDate.getTime()) ? scheduledDate : new Date();
@@ -68,17 +179,80 @@ async function findMeetingForUpload({ meetLink, title, scheduledAt }) {
     },
   });
 
-  const matches = candidates.filter((meeting) => (
-    normalizeMeetingTitle(meeting.title) === normalizedTitle
-  ));
+  const matches = candidates
+    .map((meeting) => ({ meeting, score: scoreTitleMatch(title, meeting.title) }))
+    .filter((m) => m.score > 0);
   const statusRank = { recording: 0, scheduled: 1, processing: 2 };
   matches.sort((a, b) => {
-    const linkRank = Number(!b.meet_link) - Number(!a.meet_link);
+    if (b.score !== a.score) return b.score - a.score;
+    const linkRank = Number(!b.meeting.meet_link) - Number(!a.meeting.meet_link);
     if (linkRank !== 0) return linkRank;
-    return (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    const statusDiff = (statusRank[a.meeting.status] ?? 9) - (statusRank[b.meeting.status] ?? 9);
+    if (statusDiff !== 0) return statusDiff;
+    return Math.abs(new Date(a.meeting.scheduled_at).getTime() - validDate.getTime())
+      - Math.abs(new Date(b.meeting.scheduled_at).getTime() - validDate.getTime());
   });
 
-  return matches[0] || null;
+  return matches[0]?.meeting || null;
+}
+
+function parseAttendeePayload(body) {
+  const attendees = [];
+
+  if (body.attendees) {
+    const raw = typeof body.attendees === 'string'
+      ? (() => { try { return JSON.parse(body.attendees); } catch { return []; } })()
+      : body.attendees;
+    if (Array.isArray(raw)) attendees.push(...raw);
+  }
+
+  if (body.attendee_emails) {
+    const emails = Array.isArray(body.attendee_emails)
+      ? body.attendee_emails
+      : String(body.attendee_emails).split(',');
+    attendees.push(...emails.map((email) => ({ email })));
+  }
+
+  const seen = new Set();
+  return attendees
+    .map((a) => ({
+      email: String(a.email || '').trim().toLowerCase() || null,
+      name: String(a.name || a.displayName || '').trim() || null,
+      status: a.status === 'absent' ? 'absent' : 'present',
+    }))
+    .filter((a) => a.email || a.name)
+    .filter((a) => {
+      const key = a.email || `name:${a.name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+async function upsertAttendeesForMeeting(meetingId, attendees) {
+  for (const attendee of attendees) {
+    const user = attendee.email ? await User.findOne({ where: { email: attendee.email } }) : null;
+    const where = attendee.email
+      ? { meeting_id: meetingId, email: attendee.email }
+      : { meeting_id: meetingId, name: attendee.name };
+    const existing = await MeetingAttendee.findOne({ where });
+
+    if (existing) {
+      await existing.update({
+        name: attendee.name || existing.name || user?.name || null,
+        user_id: user?.id || existing.user_id || null,
+        status: attendee.status,
+      });
+    } else {
+      await MeetingAttendee.create({
+        meeting_id: meetingId,
+        email: attendee.email,
+        name: attendee.name || user?.name || null,
+        user_id: user?.id || null,
+        status: attendee.status,
+      });
+    }
+  }
 }
 
 async function listMeetings(req, res, next) {
@@ -230,7 +404,7 @@ async function deleteMeeting(req, res, next) {
 
 async function createMeeting(req, res, next) {
   try {
-    const { title, scheduled_at, meet_link, location, attendee_emails } = req.body;
+    const { title, scheduled_at, meet_link, location } = req.body;
     if (!title || !scheduled_at) {
       return res.status(400).json({ error: 'title and scheduled_at are required' });
     }
@@ -250,14 +424,7 @@ async function createMeeting(req, res, next) {
       status: 'scheduled',
     });
 
-    // Register attendees by email if provided
-    if (Array.isArray(attendee_emails) && attendee_emails.length) {
-      const users = await User.findAll({ where: { email: attendee_emails } });
-      const MeetingAttendee = require('../models/MeetingAttendee');
-      await Promise.all(
-        users.map((u) => MeetingAttendee.create({ meeting_id: meeting.id, user_id: u.id }))
-      );
-    }
+    await upsertAttendeesForMeeting(meeting.id, parseAttendeePayload(req.body));
 
     const full = await Meeting.findByPk(meeting.id, {
       include: [{ model: User, as: 'organizer', attributes: ['id', 'name', 'email'] }],
@@ -271,12 +438,13 @@ async function createMeeting(req, res, next) {
 
 async function startExtensionRecording(req, res, next) {
   try {
-    const { title, scheduled_at, meet_link } = req.body;
+    const { title, scheduled_at, meet_link, platform } = req.body;
     if (!meet_link && !title) {
       return res.status(400).json({ error: 'meet_link or title is required' });
     }
 
     const scheduledAt = scheduled_at || new Date().toISOString();
+    await refreshCurrentUserSchedule(req.user.id);
     let meeting = await findMeetingForUpload({ meetLink: meet_link, title, scheduledAt });
 
     if (meeting) {
@@ -284,6 +452,7 @@ async function startExtensionRecording(req, res, next) {
         await meeting.update({
           status: 'recording',
           started_at: meeting.started_at || new Date(),
+          location: platform || meeting.location,
         });
       }
       logger.info(`Extension recording attached to meeting ${meeting.id}: "${meeting.title}"`);
@@ -292,6 +461,7 @@ async function startExtensionRecording(req, res, next) {
         title: title || 'Google Meet Recording',
         scheduled_at: new Date(scheduledAt),
         meet_link: meet_link || null,
+        location: platform || null,
         created_by: req.user.id,
         organizer_id: req.user.id,
         status: 'recording',
@@ -299,6 +469,8 @@ async function startExtensionRecording(req, res, next) {
       });
       logger.info(`Extension recording created meeting ${meeting.id}: "${meeting.title}"`);
     }
+
+    await upsertAttendeesForMeeting(meeting.id, parseAttendeePayload(req.body));
 
     res.status(200).json({ ok: true, meeting });
   } catch (err) {
@@ -308,7 +480,7 @@ async function startExtensionRecording(req, res, next) {
 
 async function uploadMeeting(req, res, next) {
   try {
-    const { title, scheduled_at, location, meet_link, attendee_emails } = req.body;
+    const { title, scheduled_at, location, meet_link } = req.body;
     if (!title || !scheduled_at) {
       return res.status(400).json({ error: 'title and scheduled_at are required' });
     }
@@ -320,16 +492,17 @@ async function uploadMeeting(req, res, next) {
     const platform   = req.body.platform || 'Unknown';
     logger.info(`━━━ AI PIPELINE START ━━━ "${title}" [${platform}] — ${fileSizeMB} MB`);
 
+    await refreshCurrentUserSchedule(req.user.id);
     let meeting = await findMeetingForUpload({ meetLink: meet_link, title, scheduledAt: scheduled_at });
 
     if (meeting) {
       const update = {
-        title: title || meeting.title,
         location: location || meeting.location,
         meet_link: meet_link || meeting.meet_link,
         status: 'processing',
         ended_at: new Date(),
       };
+      if (!meeting.google_event_id && title) update.title = title;
       if (!meeting.started_at) update.started_at = new Date(scheduled_at);
       if (meeting.started_at) {
         update.duration_seconds = Math.max(
@@ -354,16 +527,7 @@ async function uploadMeeting(req, res, next) {
       logger.info(`[Pipeline] Created new meeting #${meeting.id}: "${meeting.title}"`);
     }
 
-    if (attendee_emails) {
-      const emails = String(attendee_emails).split(',').map((e) => e.trim()).filter(Boolean);
-      if (emails.length) {
-        const users = await User.findAll({ where: { email: emails } });
-        const AttendeeModel = require('../models/MeetingAttendee');
-        await Promise.all(users.map((u) =>
-          AttendeeModel.create({ meeting_id: meeting.id, user_id: u.id }),
-        ));
-      }
-    }
+    await upsertAttendeesForMeeting(meeting.id, parseAttendeePayload(req.body));
 
     // Step 1 — Convert to MP3 if needed
     const nodePath   = require('path');

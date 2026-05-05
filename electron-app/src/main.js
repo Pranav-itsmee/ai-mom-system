@@ -40,6 +40,11 @@ let mainWindow     = null;
 let detectInterval = null;
 let activeMeeting  = null; // truthy when in a meeting
 let isQuitting     = false;
+let pendingMeeting  = null; // candidate detected but not yet confirmed
+let pendingTicks    = 0;    // consecutive ticks the candidate has been seen
+let noMeetingTicks  = 0;    // consecutive ticks with no meeting window seen
+const CONFIRM_TICKS = 2;   // require 2 consecutive detections (~6s) before starting
+const END_TICKS     = 3;   // require 3 consecutive absences (~9s) before stopping — handles Zoom window transitions
 
 // ── Meeting detection ─────────────────────────────────────────────────────────
 async function detectMeeting() {
@@ -47,23 +52,57 @@ async function detectMeeting() {
     const sources = await desktopCapturer.getSources({ types: ['window'] });
     const found = findMeetingSource(sources);
 
-    if (found && !activeMeeting) {
-      activeMeeting = found;
-      const title = found.title;
-      console.log(`[AIMOM] Meeting detected: "${title}" (${found.platform})`);
-      setTrayStatus('detected');
-      wireDisplayMedia(found);
-      setTimeout(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send('meeting:start', { title, platform: found.platform });
-        showMainWindow();
-      }, 2000);
+    if (found) {
+      noMeetingTicks = 0; // reset end-grace counter on any detection
 
-    } else if (!found && activeMeeting) {
-      console.log('[AIMOM] Meeting ended');
-      activeMeeting = null;
-      mainWindow?.webContents?.send('meeting:end');
-      setTrayStatus('idle');
+      if (!activeMeeting) {
+        // Require CONFIRM_TICKS consecutive detections before firing
+        if (pendingMeeting && pendingMeeting.id === found.id) {
+          pendingTicks++;
+        } else {
+          pendingMeeting = found;
+          pendingTicks = 1;
+          console.log(`[AIMOM] Meeting candidate: "${found.title}" (${found.platform}) tick 1/${CONFIRM_TICKS}`);
+        }
+
+        if (pendingTicks >= CONFIRM_TICKS) {
+          activeMeeting = pendingMeeting;
+          pendingMeeting = null;
+          pendingTicks = 0;
+          const title = activeMeeting.title;
+          console.log(`[AIMOM] Meeting confirmed: "${title}" (${activeMeeting.platform})`);
+          setTrayStatus('detected');
+          wireDisplayMedia(activeMeeting);
+          setTimeout(() => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            mainWindow.webContents.send('meeting:start', { title, platform: activeMeeting.platform });
+            showMainWindow();
+          }, 1000);
+        } else {
+          console.log(`[AIMOM] Meeting candidate tick ${pendingTicks}/${CONFIRM_TICKS}`);
+        }
+      }
+      // else: activeMeeting already set — meeting still in progress, nothing to do
+
+    } else {
+      // No meeting window visible this tick
+      pendingMeeting = null;
+      pendingTicks = 0;
+
+      if (activeMeeting) {
+        noMeetingTicks++;
+        // Grace period: Zoom/Teams can briefly close their window during transitions.
+        // Only declare meeting ended after END_TICKS consecutive absent ticks.
+        if (noMeetingTicks >= END_TICKS) {
+          console.log('[AIMOM] Meeting ended (confirmed after grace period)');
+          activeMeeting = null;
+          noMeetingTicks = 0;
+          mainWindow?.webContents?.send('meeting:end');
+          setTrayStatus('idle');
+        } else {
+          console.log(`[AIMOM] Meeting window absent tick ${noMeetingTicks}/${END_TICKS} — waiting`);
+        }
+      }
     }
   } catch (err) {
     // Ignore — detection errors are non-fatal

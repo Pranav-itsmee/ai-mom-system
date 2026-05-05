@@ -11,6 +11,13 @@ let timerInterval  = null;
 let elapsedSeconds = 0;
 let currentMeeting = null;   // { title, platform, startedAt }
 let lastMeetingId  = null;   // meeting ID from upload response
+let silenceAudioCtx = null;
+let silenceInterval = null;
+
+const SILENCE_STOP_AFTER_MS = 90_000;
+const SILENCE_GRACE_MS = 30_000;
+const SILENCE_RMS_THRESHOLD = 0.012;
+const SILENCE_ABORT_NO_AUDIO_MS = 35_000; // abort if no audio at all (pre-join screen)
 
 // ── Screen management ─────────────────────────────────────────────────────────
 const SCREENS = ['login', 'idle', 'recording', 'uploading', 'done', 'error', 'settings'];
@@ -65,6 +72,91 @@ function showError(msg) {
   api.sendStatus('error');
 }
 
+function stopSilenceMonitor() {
+  if (silenceInterval) {
+    clearInterval(silenceInterval);
+    silenceInterval = null;
+  }
+  if (silenceAudioCtx) {
+    silenceAudioCtx.close().catch(() => {});
+    silenceAudioCtx = null;
+  }
+}
+
+function abortRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  console.log('[AIMOM] Aborting — no audio detected (likely pre-join screen)');
+  stopTimer();
+  stopSilenceMonitor();
+  mediaRecorder.onstop = () => {
+    if (displayStream) { displayStream.getTracks().forEach(t => t.stop()); displayStream = null; }
+    mediaRecorder = null;
+    chunks = [];
+    currentMeeting = null;
+  };
+  try { mediaRecorder.stop(); } catch {}
+  showIdleScreen();
+  api.sendStatus('idle');
+}
+
+function startSilenceMonitor(stream) {
+  stopSilenceMonitor();
+
+  try {
+    silenceAudioCtx = new AudioContext();
+    const source = silenceAudioCtx.createMediaStreamSource(stream);
+    const analyser = silenceAudioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    const samples = new Uint8Array(analyser.fftSize);
+    const startedAt = Date.now();
+    let heardAudio = false;
+    let silentSince = null;
+
+    silenceInterval = setInterval(() => {
+      if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+        stopSilenceMonitor();
+        return;
+      }
+
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) {
+        const centered = (sample - 128) / 128;
+        sum += centered * centered;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+
+      if (rms >= SILENCE_RMS_THRESHOLD) {
+        heardAudio = true;
+        silentSince = null;
+        return;
+      }
+
+      const elapsed = Date.now() - startedAt;
+
+      // Abort early if we've never heard any audio — user hasn't actually joined yet
+      if (!heardAudio && elapsed >= SILENCE_ABORT_NO_AUDIO_MS) {
+        abortRecording();
+        return;
+      }
+
+      if (elapsed < SILENCE_GRACE_MS || !heardAudio) return;
+      if (!silentSince) {
+        silentSince = Date.now();
+        return;
+      }
+      if (Date.now() - silentSince >= SILENCE_STOP_AFTER_MS) {
+        console.log('[AIMOM] Sustained silence detected; stopping recording');
+        triggerStop();
+      }
+    }, 1000);
+  } catch (err) {
+    console.warn('[AIMOM] Silence monitor unavailable:', err?.message ?? err);
+  }
+}
+
 // ── Recording ─────────────────────────────────────────────────────────────────
 async function startRecording(meetingData) {
   currentMeeting = {
@@ -104,6 +196,7 @@ async function startRecording(meetingData) {
     // Record only the audio — no video data in the file
     const audioOnlyStream = new MediaStream(displayStream.getAudioTracks());
     const mimeType = pickMimeType();
+    startSilenceMonitor(audioOnlyStream);
 
     mediaRecorder = new MediaRecorder(
       audioOnlyStream,
@@ -126,6 +219,7 @@ async function startRecording(meetingData) {
 
   } catch (err) {
     stopTimer();
+    stopSilenceMonitor();
     if (displayStream) { displayStream.getTracks().forEach(t => t.stop()); displayStream = null; }
     const msg = err?.name === 'NotAllowedError'
       ? 'Permission denied for audio capture.'
@@ -138,6 +232,7 @@ function triggerStop() {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
 
   stopTimer();
+  stopSilenceMonitor();
   showScreen('uploading');
   api.sendStatus('uploading');
 
