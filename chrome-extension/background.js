@@ -103,6 +103,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           title: msg.title || 'Google Meet Recording',
           scheduled_at: msg.scheduledAt || new Date().toISOString(),
           meet_link: msg.meetLink,
+          platform: msg.platform,
         }),
       })
         .then(async (res) => {
@@ -148,6 +149,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       form.append('file',         blob, 'recording.webm');
       form.append('title',        msg.title       || 'Google Meet Recording');
       form.append('scheduled_at', msg.scheduledAt || new Date().toISOString());
+      if (msg.platform) form.append('platform', msg.platform);
       if (msg.meetLink) form.append('meet_link', msg.meetLink);
 
       fetch(`${apiUrl}/meetings/upload`, {

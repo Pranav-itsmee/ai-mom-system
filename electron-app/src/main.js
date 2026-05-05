@@ -20,55 +20,6 @@ function initStore() {
   }
 }
 
-// ── Meeting detection patterns ────────────────────────────────────────────────
-// Google Meet window titles by browser:
-//   Chrome / Edge / Brave / Opera : "Meet - Title - BrowserName"   (hyphen)
-//   Firefox                        : "Meet - Title — Mozilla Firefox"  (em dash U+2014)
-//   Popped-out window              : "Meet - abc-defg-hij"  (no browser suffix)
-const MEETING_PATTERNS = [
-  // Zoom desktop
-  { re: /^Zoom Meeting$/i,                           platform: 'Zoom'        },
-  { re: /^Zoom Webinar$/i,                           platform: 'Zoom'        },
-
-  // Google Meet — Chrome, Edge, Brave, Opera (' - BrowserName' suffix)
-  { re: /^Meet - .+ - .+$/i,                         platform: 'Google Meet' },
-  // Google Meet — Firefox (' — Mozilla Firefox' suffix, em dash)
-  { re: /^Meet - .+ — .+$/i,                    platform: 'Google Meet' },
-  // Google Meet — popped-out window or browser that omits its own name
-  { re: /^Meet - [a-z]{3}-[a-z]{4}-[a-z]{3}$/i,     platform: 'Google Meet' },
-  // Google Meet — alternate title format used by some Meet versions
-  { re: /^.+ - Google Meet$/i,                       platform: 'Google Meet' },
-
-  // Microsoft Teams desktop
-  { re: /^Microsoft Teams.*(?:Call|Meeting)/i,       platform: 'Teams'       },
-  { re: /^.+ \| Microsoft Teams$/i,                  platform: 'Teams'       },
-  { re: /^Microsoft Teams - .+$/i,                   platform: 'Teams'       },
-
-  // Cisco Webex desktop
-  { re: /^Cisco Webex (Meeting|Webinar)/i,           platform: 'Webex'       },
-];
-
-function extractMeetingTitle(windowName) {
-  let m;
-
-  // Google Meet: strip the trailing browser name after the last ' - ' or ' — ' separator.
-  // Works for all browsers including Firefox (em dash) and titles that contain dashes.
-  if (windowName.startsWith('Meet - ')) {
-    const inner = windowName.slice(7); // remove leading "Meet - "
-    // Remove "BrowserName" suffix: everything after the last dash/en-dash/em-dash separator
-    const stripped = inner.replace(/\s+[–—-]\s+[^–—-]+$/, '').trim();
-    return stripped || inner.trim();
-  }
-
-  if ((m = windowName.match(/^(.+) - Google Meet$/i)))       return m[1].trim();
-  if ((m = windowName.match(/^(.+) \| Microsoft Teams$/i)))  return m[1].trim();
-  if ((m = windowName.match(/^Microsoft Teams - (.+)$/i)))   return m[1].trim();
-  if (/Zoom Webinar/i.test(windowName))                      return 'Zoom Webinar';
-  if (/Zoom Meeting/i.test(windowName))                      return 'Zoom Meeting';
-  if (/Cisco Webex/i.test(windowName))                       return 'Webex Meeting';
-  return windowName.trim();
-}
-
 // ── Fallback tray icon — teal 16×16 PNG encoded as data URL ──────────────────
 const FALLBACK_ICON =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9h' +
@@ -89,6 +40,16 @@ let mainWindow     = null;
 let detectInterval = null;
 let activeMeeting  = null; // truthy when in a meeting
 let isQuitting     = false;
+let pendingMeeting  = null; // candidate detected but not yet confirmed
+let pendingTicks    = 0;    // consecutive ticks the candidate has been seen
+let noMeetingTicks  = 0;    // consecutive ticks with no meeting window seen
+const CONFIRM_TICKS = 2;   // require 2 consecutive detections (~6s) before starting
+const END_TICKS     = 3;   // require 3 consecutive absences (~9s) before stopping — handles Zoom window transitions
+
+// Returns true for generic fallback titles that carry no meeting-specific info
+function isGenericTitle(title) {
+  return /^(zoom (meeting|webinar)|zoom workplace|google meet|teams meeting|meet|[a-z]{3}-[a-z]{4}-[a-z]{3})$/i.test((title ?? '').trim());
+}
 
 // ── Meeting detection ─────────────────────────────────────────────────────────
 async function detectMeeting() {
@@ -96,23 +57,65 @@ async function detectMeeting() {
     const sources = await desktopCapturer.getSources({ types: ['window'] });
     const found = findMeetingSource(sources);
 
-    if (found && !activeMeeting) {
-      activeMeeting = found;
-      const title = found.title;
-      console.log(`[AIMOM] Meeting detected: "${title}" (${found.platform})`);
-      setTrayStatus('detected');
-      wireDisplayMedia(found);
-      setTimeout(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send('meeting:start', { title, platform: found.platform });
-        showMainWindow();
-      }, 2000);
+    if (found) {
+      noMeetingTicks = 0; // reset end-grace counter on any detection
 
-    } else if (!found && activeMeeting) {
-      console.log('[AIMOM] Meeting ended');
-      activeMeeting = null;
-      mainWindow?.webContents?.send('meeting:end');
-      setTrayStatus('idle');
+      if (!activeMeeting) {
+        // Require CONFIRM_TICKS consecutive detections before firing
+        if (pendingMeeting && pendingMeeting.id === found.id) {
+          pendingTicks++;
+        } else {
+          pendingMeeting = found;
+          pendingTicks = 1;
+          console.log(`[AIMOM] Meeting candidate: "${found.title}" (${found.platform}) tick 1/${CONFIRM_TICKS}`);
+        }
+
+        if (pendingTicks >= CONFIRM_TICKS) {
+          activeMeeting = pendingMeeting;
+          pendingMeeting = null;
+          pendingTicks = 0;
+          const title = activeMeeting.title;
+          console.log(`[AIMOM] Meeting confirmed: "${title}" (${activeMeeting.platform})`);
+          setTrayStatus('detected');
+          wireDisplayMedia(activeMeeting);
+          setTimeout(() => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            mainWindow.webContents.send('meeting:start', { title, platform: activeMeeting.platform });
+            showMainWindow();
+          }, 1000);
+        } else {
+          console.log(`[AIMOM] Meeting candidate tick ${pendingTicks}/${CONFIRM_TICKS}`);
+        }
+      } else {
+        // Meeting still in progress — upgrade title if a better (non-generic) one appears
+        if (found.title !== activeMeeting.title &&
+            isGenericTitle(activeMeeting.title) &&
+            !isGenericTitle(found.title)) {
+          console.log(`[AIMOM] Title upgraded: "${activeMeeting.title}" → "${found.title}"`);
+          activeMeeting = { ...activeMeeting, ...found };
+          mainWindow?.webContents?.send('meeting:update', { title: found.title, platform: found.platform });
+        }
+      }
+
+    } else {
+      // No meeting window visible this tick
+      pendingMeeting = null;
+      pendingTicks = 0;
+
+      if (activeMeeting) {
+        noMeetingTicks++;
+        // Grace period: Zoom/Teams can briefly close their window during transitions.
+        // Only declare meeting ended after END_TICKS consecutive absent ticks.
+        if (noMeetingTicks >= END_TICKS) {
+          console.log('[AIMOM] Meeting ended (confirmed after grace period)');
+          activeMeeting = null;
+          noMeetingTicks = 0;
+          mainWindow?.webContents?.send('meeting:end');
+          setTrayStatus('idle');
+        } else {
+          console.log(`[AIMOM] Meeting window absent tick ${noMeetingTicks}/${END_TICKS} — waiting`);
+        }
+      }
     }
   } catch (err) {
     // Ignore — detection errors are non-fatal
@@ -289,6 +292,16 @@ function registerIPC() {
     activeMeeting = null;
     setTrayStatus('idle');
     tray?.setContextMenu(buildMenu());
+  });
+  // Probe failed (pre-join / idle window) — reset so next real window can be detected
+  ipcMain.on('probe-cancelled', () => {
+    activeMeeting  = null;
+    pendingMeeting = null;
+    pendingTicks   = 0;
+    noMeetingTicks = 0;
+    setTrayStatus('idle');
+    tray?.setContextMenu(buildMenu());
+    console.log('[AIMOM] Probe cancelled — reset detection state');
   });
   ipcMain.on('window-hide', () => mainWindow?.hide());
 }

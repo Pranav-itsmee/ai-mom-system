@@ -8,13 +8,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteStore: (key)         => ipcRenderer.invoke('delete-store', key),
 
   // Send status back to main (fire and forget)
-  sendStatus:  (status)      => ipcRenderer.send('recording-status', status),
-  sendDone:    ()            => ipcRenderer.send('recording-done'),
-  hideWindow:  ()            => ipcRenderer.send('window-hide'),
+  sendStatus:        (status) => ipcRenderer.send('recording-status', status),
+  sendDone:          ()      => ipcRenderer.send('recording-done'),
+  sendProbeCancelled:()      => ipcRenderer.send('probe-cancelled'),
+  hideWindow:        ()      => ipcRenderer.send('window-hide'),
 
   // Listen for events from main process
   onMeetingStart:  (cb) => ipcRenderer.on('meeting:start',      (_, data) => cb(data)),
   onMeetingEnd:    (cb) => ipcRenderer.on('meeting:end',        ()        => cb()),
+  onMeetingUpdate: (cb) => ipcRenderer.on('meeting:update',     (_, data) => cb(data)),
   onForceStop:     (cb) => ipcRenderer.on('meeting:force-stop', ()        => cb()),
   onShowLogin:     (cb) => ipcRenderer.on('show-login',         ()        => cb()),
   onShowIdle:      (cb) => ipcRenderer.on('show-idle',          (_, data) => cb(data)),

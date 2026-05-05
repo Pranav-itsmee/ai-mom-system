@@ -14,7 +14,18 @@
       "PowerShell(Get-Process electron -ErrorAction SilentlyContinue)",
       "PowerShell(Stop-Process -Force)",
       "PowerShell(cd \"d:\\\\ai-mom-system\\\\electron-app\"; $job = Start-Job -ScriptBlock { Set-Location \"d:\\\\ai-mom-system\\\\electron-app\"; npm start 2>&1 }; Start-Sleep -Seconds 10; $running = Get-Process electron -ErrorAction SilentlyContinue; if \\($running\\) { Write-Host \"SUCCESS: Electron running with $\\($running.Count\\) processes\" } else { Write-Host \"FAIL: No electron processes found\" }; Receive-Job $job | Select-Object -First 20; $running | Stop-Process -Force; Remove-Job $job -Force)",
-      "PowerShell(Remove-Item \"d:\\\\ai-mom-system\\\\electron-app\\\\debug-test.js\" -ErrorAction SilentlyContinue; Remove-Item \"d:\\\\ai-mom-system\\\\electron-app\\\\test-minimal.js\" -ErrorAction SilentlyContinue; Remove-Item \"$env:USERPROFILE\\\\Desktop\\\\electron-debug.json\" -ErrorAction SilentlyContinue; Remove-Item \"$env:USERPROFILE\\\\Desktop\\\\electron-test.log\" -ErrorAction SilentlyContinue; Write-Host \"cleaned\")"
+      "PowerShell(Remove-Item \"d:\\\\ai-mom-system\\\\electron-app\\\\debug-test.js\" -ErrorAction SilentlyContinue; Remove-Item \"d:\\\\ai-mom-system\\\\electron-app\\\\test-minimal.js\" -ErrorAction SilentlyContinue; Remove-Item \"$env:USERPROFILE\\\\Desktop\\\\electron-debug.json\" -ErrorAction SilentlyContinue; Remove-Item \"$env:USERPROFILE\\\\Desktop\\\\electron-test.log\" -ErrorAction SilentlyContinue; Write-Host \"cleaned\")",
+      "Bash(node scripts/check-detection.js)",
+      "Bash(Remove-Item \"d:\\\\ai-mom-system\\\\electron-app\\\\src\\\\debug-main.js\")",
+      "Bash(Write-Host \"removed\")",
+      "Bash(node -e \"const m = require\\('./src/meetingDetection'\\); console.log\\(Object.keys\\(m\\)\\);\")",
+      "Read(//c/Program Files/MySQL/**)",
+      "Read(//c//**)",
+      "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'mysql|mariadb|xampp|wamp|laragon' })",
+      "Bash(mysql -u root -pPranav@2003 ai_mom_db -e \"SELECT id, title, status FROM meetings ORDER BY id;\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"SELECT id, title, status FROM meetings ORDER BY id;\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"DELETE FROM meetings WHERE status != 'completed'; SELECT ROW_COUNT\\(\\) AS deleted_rows;\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\" -u root -pPranav@2003 ai_mom_db -e \"DELETE FROM meetings WHERE status != 'completed'; SELECT ROW_COUNT\\(\\) AS deleted;\")"
     ]
   }
 }

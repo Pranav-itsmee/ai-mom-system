@@ -21,6 +21,7 @@ frontend/.next/
 frontend/out/
 frontend/build/
 backend/dist/
+electron-app/dist/
 
 # ── TypeScript build info ──────────────────────────────────────────────────────
 *.tsbuildinfo
